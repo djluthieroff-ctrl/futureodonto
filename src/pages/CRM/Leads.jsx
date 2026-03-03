@@ -12,9 +12,21 @@ export default function Leads() {
     const [modalNovoLead, setModalNovoLead] = useState(false)
     const [novoLead, setNovoLead] = useState({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social' })
     const [saving, setSaving] = useState(false)
+    const [savingAgendamento, setSavingAgendamento] = useState(false)
     const [modalImport, setModalImport] = useState(false)
+    const [modalAgendamento, setModalAgendamento] = useState(false)
     const [importJson, setImportJson] = useState('')
     const [sortOrder, setSortOrder] = useState('created_desc')
+    const [leadParaAgendar, setLeadParaAgendar] = useState(null)
+    const [dentistas, setDentistas] = useState([])
+    const [cadeiras, setCadeiras] = useState([])
+    const [agendamentoForm, setAgendamentoForm] = useState({
+        data_inicio: '',
+        data_fim: '',
+        dentista_id: '',
+        cadeira_id: '',
+        motivo: 'consulta'
+    })
 
     const loadLeads = useCallback(async () => {
         setLoading(true)
@@ -38,6 +50,23 @@ export default function Leads() {
     useEffect(() => {
         loadLeads()
     }, [loadLeads])
+
+    const loadConfigsAgendamento = useCallback(async () => {
+        try {
+            const [{ data: d }, { data: c }] = await Promise.all([
+                supabase.from('dentistas').select('id,nome').eq('ativo', true).order('nome'),
+                supabase.from('cadeiras').select('id,nome').eq('ativa', true).order('nome')
+            ])
+            setDentistas(d || [])
+            setCadeiras(c || [])
+        } catch (e) {
+            console.error('Erro ao carregar configuracoes de agendamento:', e)
+        }
+    }, [])
+
+    useEffect(() => {
+        loadConfigsAgendamento()
+    }, [loadConfigsAgendamento])
 
     const handleCreateLead = async () => {
         if (!novoLead.name) return toast.warning('Nome é obrigatório')
@@ -135,6 +164,153 @@ export default function Leads() {
         } catch (e) {
             console.error('Erro ao atualizar lead:', e)
         }
+    }
+
+    const formatForInput = (dateValue) => {
+        const d = new Date(dateValue)
+        if (Number.isNaN(d.getTime())) return ''
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    }
+
+    const buildDefaultScheduleForm = useCallback((lead) => {
+        const step = 15 * 60000
+        const startBase = lead?.data_desejada ? new Date(lead.data_desejada) : new Date()
+        const start = new Date(Math.ceil(startBase.getTime() / step) * step)
+        const end = new Date(start.getTime() + step)
+        return {
+            data_inicio: formatForInput(start),
+            data_fim: formatForInput(end),
+            dentista_id: dentistas[0]?.id || '',
+            cadeira_id: cadeiras[0]?.id || '',
+            motivo: 'consulta'
+        }
+    }, [dentistas, cadeiras])
+
+    const abrirModalAgendamento = useCallback((lead) => {
+        setLeadParaAgendar(lead)
+        setAgendamentoForm(buildDefaultScheduleForm(lead))
+        setModalAgendamento(true)
+    }, [buildDefaultScheduleForm])
+
+    const fecharModalAgendamento = () => {
+        setModalAgendamento(false)
+        setLeadParaAgendar(null)
+    }
+
+    const syncLeadAsScheduled = async (leadId, pacienteId, dataInicioIso) => {
+        const basePayload = {
+            convertido_em_paciente: true,
+            paciente_id: pacienteId,
+            data_desejada: dataInicioIso
+        }
+
+        const { error: etapaError } = await supabase
+            .from('leads')
+            .update({ ...basePayload, etapa: 'consulta_agendada' })
+            .eq('id', leadId)
+
+        if (!etapaError) return
+
+        if (etapaError.code === 'PGRST204' || etapaError.message?.includes('column "etapa" does not exist')) {
+            const { error: statusError } = await supabase
+                .from('leads')
+                .update({ ...basePayload, status: 'agendado' })
+                .eq('id', leadId)
+            if (!statusError) return
+            throw statusError
+        }
+
+        throw etapaError
+    }
+
+    const ensurePacienteForLead = async (lead) => {
+        if (lead.paciente_id) return lead.paciente_id
+
+        const patientPayload = {
+            name: lead.name,
+            phone: lead.phone || null,
+            email: lead.email || null,
+            source: lead.source || lead.type || 'Lead'
+        }
+
+        let { data: newPatient, error: pError } = await supabase
+            .from('patients')
+            .insert([patientPayload])
+            .select()
+            .single()
+
+        if (pError) {
+            if (pError.message?.includes('source') && (pError.message?.includes('column') || pError.message?.includes('schema cache'))) {
+                delete patientPayload.source
+                const { data: retryData, error: retryError } = await supabase
+                    .from('patients')
+                    .insert([patientPayload])
+                    .select()
+                    .single()
+                if (retryError) throw retryError
+                newPatient = retryData
+            } else {
+                throw pError
+            }
+        }
+
+        return newPatient.id
+    }
+
+    const confirmarAgendamentoLead = async () => {
+        if (!leadParaAgendar) return
+        if (!agendamentoForm.data_inicio) return toast.warning('Informe data e hora de inicio')
+        if (!agendamentoForm.dentista_id) return toast.warning('Selecione um dentista')
+        if (!agendamentoForm.cadeira_id) return toast.warning('Selecione uma cadeira')
+
+        setSavingAgendamento(true)
+        try {
+            const pacienteId = await ensurePacienteForLead(leadParaAgendar)
+            const dataInicioIso = new Date(agendamentoForm.data_inicio).toISOString()
+            const dataFimIso = agendamentoForm.data_fim
+                ? new Date(agendamentoForm.data_fim).toISOString()
+                : new Date(new Date(agendamentoForm.data_inicio).getTime() + 15 * 60000).toISOString()
+
+            const appointmentPayload = {
+                paciente_id: pacienteId,
+                dentista_id: agendamentoForm.dentista_id,
+                cadeira_id: agendamentoForm.cadeira_id,
+                data_inicio: dataInicioIso,
+                data_fim: dataFimIso,
+                motivo: agendamentoForm.motivo || 'consulta',
+                situacao: 'agendado',
+                observacoes: `Criado a partir do lead: ${leadParaAgendar.name}`
+            }
+
+            const { error: appointmentError } = await supabase.from('agendamentos').insert([appointmentPayload])
+            if (appointmentError) throw appointmentError
+
+            await syncLeadAsScheduled(leadParaAgendar.id, pacienteId, dataInicioIso)
+
+            fecharModalAgendamento()
+            setStatus('Lead agendado com sucesso!')
+            setTimeout(() => setStatus(''), 3000)
+            await loadLeads()
+            toast.success('Consulta agendada e integrada com o sistema')
+        } catch (e) {
+            console.error('Erro ao agendar lead:', e)
+            toast.error('Erro ao agendar lead: ' + (e.message || ''))
+        } finally {
+            setSavingAgendamento(false)
+        }
+    }
+
+    const handleEtapaChange = async (lead, newEtapa) => {
+        const etapaAtual = lead.etapa || lead.status || 'lead'
+        if (newEtapa === etapaAtual) return
+
+        if (newEtapa === 'consulta_agendada') {
+            abrirModalAgendamento(lead)
+            return
+        }
+
+        await updateLeadStatus(lead.id, newEtapa)
     }
 
     const converterEmPaciente = async (lead) => {
@@ -254,8 +430,8 @@ export default function Leads() {
                                         <td>
                                             <select
                                                 className="form-control form-control-sm"
-                                                value={lead.etapa}
-                                                onChange={(e) => updateLeadStatus(lead.id, e.target.value)}
+                                                value={lead.etapa || lead.status || 'lead'}
+                                                onChange={(e) => handleEtapaChange(lead, e.target.value)}
                                                 style={{ width: 'auto' }}
                                             >
                                                 <option value="lead">Novo Lead</option>
@@ -337,6 +513,90 @@ export default function Leads() {
                     <LeadTable leads={sortedLeadsOnline} title="Seção 1: Agendamentos Online" isOnline={true} />
                     <LeadTable leads={sortedLeadsRedes} title="Seção 2: Leads de Redes Sociais" isOnline={false} />
                 </>
+            )}
+
+            {modalAgendamento && leadParaAgendar && (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && fecharModalAgendamento()}>
+                    <div className="modal modal-sm">
+                        <div className="modal-header">
+                            <div className="modal-title">Agendar consulta do lead</div>
+                            <button className="modal-close" onClick={fecharModalAgendamento}><i className="fa-solid fa-xmark" /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ fontSize: 13, marginBottom: 12 }}>
+                                <strong>{leadParaAgendar.name}</strong>
+                                <div style={{ color: 'var(--text-muted)' }}>{leadParaAgendar.phone || 'Sem telefone'}</div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Data e hora de inicio *</label>
+                                <input
+                                    type="datetime-local"
+                                    className="form-control"
+                                    step="900"
+                                    value={agendamentoForm.data_inicio}
+                                    onChange={e => setAgendamentoForm(p => ({ ...p, data_inicio: e.target.value }))}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Data e hora de fim</label>
+                                <input
+                                    type="datetime-local"
+                                    className="form-control"
+                                    step="900"
+                                    value={agendamentoForm.data_fim}
+                                    onChange={e => setAgendamentoForm(p => ({ ...p, data_fim: e.target.value }))}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Dentista *</label>
+                                <select
+                                    className="form-control"
+                                    value={agendamentoForm.dentista_id}
+                                    onChange={e => setAgendamentoForm(p => ({ ...p, dentista_id: e.target.value }))}
+                                >
+                                    <option value="">Selecionar...</option>
+                                    {dentistas.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Cadeira *</label>
+                                <select
+                                    className="form-control"
+                                    value={agendamentoForm.cadeira_id}
+                                    onChange={e => setAgendamentoForm(p => ({ ...p, cadeira_id: e.target.value }))}
+                                >
+                                    <option value="">Selecionar...</option>
+                                    {cadeiras.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Motivo</label>
+                                <select
+                                    className="form-control"
+                                    value={agendamentoForm.motivo}
+                                    onChange={e => setAgendamentoForm(p => ({ ...p, motivo: e.target.value }))}
+                                >
+                                    <option value="consulta">Consulta</option>
+                                    <option value="avaliacao">Avaliacao</option>
+                                    <option value="retorno">Retorno</option>
+                                    <option value="procedimento">Procedimento</option>
+                                    <option value="emergencia">Emergencia</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={fecharModalAgendamento}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={confirmarAgendamentoLead} disabled={savingAgendamento}>
+                                {savingAgendamento ? 'Agendando...' : 'Confirmar agendamento'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {modalNovoLead && (
