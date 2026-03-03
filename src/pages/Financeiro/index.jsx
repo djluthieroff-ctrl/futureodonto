@@ -4,6 +4,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { exportToCSV } from '../../utils/export'
 import { useToast } from '../../components/ui/Toast'
+import { registrarAuditoria } from '../../lib/auditoria'
 
 export default function Financeiro() {
     const toast = useToast()
@@ -84,6 +85,11 @@ export default function Financeiro() {
             }
 
             toast.success((tab === 'receitas' ? 'Receita' : 'Despesa') + ' salva com sucesso!')
+            await registrarAuditoria({
+                modulo: 'Financeiro',
+                acao: tab === 'receitas' ? 'Receita criada' : 'Despesa criada',
+                detalhes: `${form.descricao} | Valor: R$ ${Number(form.valor_total || 0).toFixed(2)}`,
+            })
             setSaving(false)
             setModal(false)
             setForm({ descricao: '', valor_total: '', data_vencimento: '', forma_pagamento: 'dinheiro', status: 'pendente', num_parcelas: 1 })

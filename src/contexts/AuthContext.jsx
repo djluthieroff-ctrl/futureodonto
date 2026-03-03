@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { AuthContext } from './auth-context'
+import { registrarAuditoria, syncUsuarioSistema } from '../lib/auditoria'
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
@@ -13,6 +14,9 @@ export function AuthProvider({ children }) {
             .then(({ data: { session } }) => {
                 setSession(session)
                 setUser(session?.user ?? null)
+                if (session?.user) {
+                    syncUsuarioSistema(session.user)
+                }
             })
             .catch(err => {
                 console.error('Erro ao buscar sessão:', err)
@@ -26,6 +30,9 @@ export function AuthProvider({ children }) {
             setSession(session)
             setUser(session?.user ?? null)
             setLoading(false)
+            if (session?.user) {
+                syncUsuarioSistema(session.user)
+            }
         })
 
         return () => subscription.unsubscribe()
@@ -37,6 +44,15 @@ export function AuthProvider({ children }) {
         setSession(data?.session ?? null)
         setUser(data?.user ?? null)
         setLoading(false)
+        if (data?.user) {
+            await syncUsuarioSistema(data.user)
+            await registrarAuditoria({
+                acao: 'Login no sistema',
+                modulo: 'Auth',
+                detalhes: `Usuario autenticado: ${data.user.email}`,
+                user: data.user,
+            })
+        }
         return data
     }
 
@@ -47,10 +63,28 @@ export function AuthProvider({ children }) {
             options: { data: metadata }
         })
         if (error) throw error
+        if (data?.user) {
+            await syncUsuarioSistema(data.user)
+            await registrarAuditoria({
+                acao: 'Conta criada',
+                modulo: 'Auth',
+                detalhes: `Novo usuario: ${email}`,
+                user: data.user,
+            })
+        }
         return data
     }
 
     const signOut = async () => {
+        const userEmail = user?.email || 'usuario'
+        if (user) {
+            await registrarAuditoria({
+                acao: 'Logout do sistema',
+                modulo: 'Auth',
+                detalhes: `Usuario encerrou sessao: ${userEmail}`,
+                user,
+            })
+        }
         const { error } = await supabase.auth.signOut()
         if (error) throw error
     }

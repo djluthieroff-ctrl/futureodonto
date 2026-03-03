@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { format } from 'date-fns'
 import { exportToCSV } from '../../utils/export'
 import { useToast } from '../../components/ui/Toast'
+import { registrarAuditoria } from '../../lib/auditoria'
 
 export default function Pacientes() {
     const navigate = useNavigate()
@@ -74,6 +75,11 @@ export default function Pacientes() {
             setForm({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '' })
             loadPacientes()
             toast.success('Paciente cadastrado com sucesso!')
+            await registrarAuditoria({
+                modulo: 'Pacientes',
+                acao: 'Paciente cadastrado',
+                detalhes: `Paciente: ${dataToSave.name}`,
+            })
         } catch (err) {
             console.error('Erro crítico:', err)
             toast.error('Ocorreu um erro inesperado ao tentar salvar.')
@@ -171,6 +177,11 @@ export default function Pacientes() {
                                                             if (error) throw error;
                                                             loadPacientes();
                                                             toast.success('Paciente excluído com sucesso!');
+                                                            await registrarAuditoria({
+                                                                modulo: 'Pacientes',
+                                                                acao: 'Paciente excluído',
+                                                                detalhes: `Paciente: ${p.name}`,
+                                                            })
                                                         } catch (err) {
                                                             console.error('Erro ao excluir paciente:', err);
                                                             toast.error('Erro ao excluir paciente: ' + (err.message || 'Erro desconhecido'));

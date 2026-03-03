@@ -131,21 +131,24 @@ const Usuarios = () => {
 
     const load = useCallback(async () => {
         setLoading(true)
-        const { data, error } = await supabase.auth.admin.listUsers()
+        const { data, error } = await supabase
+            .from('usuarios_sistema')
+            .select('*')
+            .order('ultimo_acesso', { ascending: false })
         if (error) {
-            console.error('Erro ao carregar usuários:', error)
-            // Se falhar (ex: sem permissão de admin), tenta pegar o usuário atual
+            console.error('Erro ao carregar usuarios do sistema:', error)
             const { data: current } = await supabase.auth.getUser()
             if (current?.user) {
                 setUsuarios([{
                     id: current.user.id,
                     email: current.user.email,
-                    user_metadata: current.user.user_metadata,
-                    last_sign_in_at: current.user.last_sign_in_at
+                    nome: current.user.user_metadata?.name || current.user.email,
+                    role: current.user.user_metadata?.role || 'usuario',
+                    ultimo_acesso: current.user.last_sign_in_at
                 }])
             }
         } else {
-            setUsuarios(data.users || [])
+            setUsuarios(data || [])
         }
         setLoading(false)
     }, [])
@@ -173,10 +176,13 @@ const Usuarios = () => {
                             ) : (
                                 usuarios.map(u => (
                                     <tr key={u.id}>
-                                        <td><strong>{u.email}</strong></td>
-                                        <td><span className="badge badge-primary">{u.user_metadata?.role || 'Usuário'}</span></td>
-                                        <td>{u.last_sign_in_at ? format(new Date(u.last_sign_in_at), 'dd/MM/yyyy HH:mm') : '—'}</td>
-                                        <td><span className="badge badge-success">Ativo</span></td>
+                                        <td>
+                                            <strong>{u.email}</strong>
+                                            {u.nome && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{u.nome}</div>}
+                                        </td>
+                                        <td><span className="badge badge-primary">{u.role || 'Usuario'}</span></td>
+                                        <td>{u.ultimo_acesso ? format(new Date(u.ultimo_acesso), 'dd/MM/yyyy HH:mm') : '�'}</td>
+                                        <td><span className={`badge ${u.ativo === false ? 'badge-danger' : 'badge-success'}`}>{u.ativo === false ? 'Inativo' : 'Ativo'}</span></td>
                                     </tr>
                                 ))
                             )}

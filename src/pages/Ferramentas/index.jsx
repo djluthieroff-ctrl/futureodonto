@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { format } from 'date-fns'
@@ -256,28 +256,94 @@ function Contatos() {
 }
 
 function Auditoria() {
-    const logs = useMemo(() => ([
-        { id: 1, data: '2026-03-02T09:00:00.000Z', usuario: 'Administrador', acao: 'Acesso ao sistema', modulo: 'Login' },
-        { id: 2, data: '2026-03-02T08:00:00.000Z', usuario: 'Administrador', acao: 'Novo paciente cadastrado: João Silva', modulo: 'Pacientes' },
-        { id: 3, data: '2026-03-02T07:00:00.000Z', usuario: 'Administrador', acao: 'Agendamento criado: Maria Oliveira', modulo: 'Agenda' },
-        { id: 4, data: '2026-03-02T06:00:00.000Z', usuario: 'Administrador', acao: 'Receita confirmada R$ 500,00', modulo: 'Financeiro' },
-    ]), [])
+    const [logs, setLogs] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+    const [selectedUser, setSelectedUser] = useState('')
+    const [usuarios, setUsuarios] = useState([])
+
+    const load = useCallback(async () => {
+        setLoading(true)
+        const dayStart = `${selectedDate}T00:00:00`
+        const dayEnd = `${selectedDate}T23:59:59`
+
+        let query = supabase
+            .from('auditoria_logs')
+            .select('*')
+            .gte('created_at', dayStart)
+            .lte('created_at', dayEnd)
+            .order('created_at', { ascending: false })
+
+        if (selectedUser) query = query.eq('user_email', selectedUser)
+
+        const { data, error } = await query
+        if (error) {
+            console.error('Erro ao carregar auditoria:', error)
+            setLogs([])
+        } else {
+            setLogs(data || [])
+        }
+        setLoading(false)
+    }, [selectedDate, selectedUser])
+
+    useEffect(() => {
+        const timer = setTimeout(() => { load() }, 0)
+        return () => clearTimeout(timer)
+    }, [load])
+
+    useEffect(() => {
+        async function loadUsers() {
+            const { data } = await supabase
+                .from('usuarios_sistema')
+                .select('email')
+                .order('email')
+            const emails = [...new Set((data || []).map((u) => u.email).filter(Boolean))]
+            setUsuarios(emails)
+        }
+        loadUsers()
+    }, [])
 
     return (
         <div className="card">
-            <div className="card-header"><div className="card-title">Auditoria de Operações</div></div>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div className="card-title">Auditoria de Operações</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <input type="date" className="form-control" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+                    <select className="form-control" value={selectedUser} onChange={e => setSelectedUser(e.target.value)} style={{ minWidth: 220 }}>
+                        <option value="">Todos os usuários</option>
+                        {usuarios.map((email) => (
+                            <option key={email} value={email}>{email}</option>
+                        ))}
+                    </select>
+                    <button className="btn btn-secondary btn-sm" onClick={load}>
+                        <i className="fa-solid fa-rotate" /> Atualizar
+                    </button>
+                </div>
+            </div>
             <div className="table-wrapper">
                 <table>
                     <thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th></tr></thead>
                     <tbody>
-                        {logs.map(log => (
-                            <tr key={log.id}>
-                                <td style={{ fontSize: 12 }}>{format(new Date(log.data), 'dd/MM/yyyy HH:mm')}</td>
-                                <td><strong>{log.usuario}</strong></td>
-                                <td>{log.acao}</td>
-                                <td><span className="badge badge-gray">{log.modulo}</span></td>
-                            </tr>
-                        ))}
+                        {loading ? (
+                            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20 }}>Carregando...</td></tr>
+                        ) : logs.length === 0 ? (
+                            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20 }}>Nenhum log encontrado para o filtro selecionado.</td></tr>
+                        ) : (
+                            logs.map(log => (
+                                <tr key={log.id}>
+                                    <td style={{ fontSize: 12 }}>{format(new Date(log.created_at), 'dd/MM/yyyy HH:mm')}</td>
+                                    <td>
+                                        <strong>{log.user_nome || 'Usuário'}</strong>
+                                        {log.user_email && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{log.user_email}</div>}
+                                    </td>
+                                    <td>
+                                        <div>{log.acao}</div>
+                                        {log.detalhes && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{log.detalhes}</div>}
+                                    </td>
+                                    <td><span className="badge badge-gray">{log.modulo}</span></td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

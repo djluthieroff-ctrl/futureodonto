@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { format, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useToast } from '../../components/ui/Toast'
+import { registrarAuditoria } from '../../lib/auditoria'
 
 const SIDEBAR_MENU = [
     { key: 'dados', label: 'Dados Pessoais', icon: 'fa-user' },
@@ -109,6 +110,11 @@ export default function ProntuarioPaciente() {
             setNovaAnotacao('')
             setModalEvolucao(false)
             toast.success('Evolucao registrada com sucesso')
+            await registrarAuditoria({
+                modulo: 'Prontuario',
+                acao: 'Evolucao registrada',
+                detalhes: `Paciente: ${paciente?.name || id}`,
+            })
             await load()
         } catch (error) {
             console.error('Erro ao registrar evolucao:', error)
@@ -129,6 +135,11 @@ export default function ProntuarioPaciente() {
             await load()
             setEditando(false)
             toast.success('Dados do paciente atualizados')
+            await registrarAuditoria({
+                modulo: 'Pacientes',
+                acao: 'Paciente atualizado',
+                detalhes: `Paciente: ${form?.name || id}`,
+            })
         } catch (error) {
             console.error('Erro ao salvar paciente:', error)
             toast.error('Erro ao salvar dados do paciente')

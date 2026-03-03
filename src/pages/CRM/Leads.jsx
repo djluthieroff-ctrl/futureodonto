@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { format } from 'date-fns'
 import { useToast } from '../../components/ui/Toast'
+import { registrarAuditoria } from '../../lib/auditoria'
 
 export default function Leads() {
     const toast = useToast()
@@ -78,6 +79,11 @@ export default function Leads() {
             setNovoLead({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social' })
             loadLeads()
             toast.success('Lead criado com sucesso!')
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead criado',
+                detalhes: `Lead: ${novoLead.name}`,
+            })
         } catch (e) {
             console.error('Erro ao criar lead:', e)
             toast.error('Erro ao criar lead: ' + (e.message || ''))
@@ -123,6 +129,11 @@ export default function Leads() {
             setModalImport(false)
             setImportJson('')
             loadLeads()
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Leads importados',
+                detalhes: `Quantidade: ${mappedLeads.length}`,
+            })
         } catch (e) {
             console.error('Erro na importação:', e)
             toast.error('Erro ao importar JSON: ' + e.message)
@@ -138,6 +149,11 @@ export default function Leads() {
             if (error) throw error
             loadLeads()
             toast.success('Lead excluído!')
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead excluido',
+                detalhes: `Lead ID: ${id}`,
+            })
         } catch (e) {
             console.error('Erro ao excluir lead:', e)
             toast.error('Erro ao excluir lead')
@@ -161,6 +177,11 @@ export default function Leads() {
             loadLeads()
             setStatus('Status atualizado!')
             setTimeout(() => setStatus(''), 3000)
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Etapa de lead atualizada',
+                detalhes: `Lead ID: ${id} -> ${newEtapa}`,
+            })
         } catch (e) {
             console.error('Erro ao atualizar lead:', e)
         }
@@ -293,6 +314,11 @@ export default function Leads() {
             setTimeout(() => setStatus(''), 3000)
             await loadLeads()
             toast.success('Consulta agendada e integrada com o sistema')
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead agendado',
+                detalhes: `Lead: ${leadParaAgendar.name} | Data: ${new Date(dataInicioIso).toLocaleString('pt-BR')}`,
+            })
         } catch (e) {
             console.error('Erro ao agendar lead:', e)
             toast.error('Erro ao agendar lead: ' + (e.message || ''))
@@ -351,6 +377,11 @@ export default function Leads() {
 
             loadLeads()
             toast.success('Lead convertido em paciente com sucesso!')
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead convertido em paciente',
+                detalhes: `Lead: ${lead.name} | Paciente ID: ${newPatient.id}`,
+            })
         } catch (e) {
             console.error('Erro ao converter lead:', e)
             toast.error('Erro ao converter lead: ' + (e.message || ''))
