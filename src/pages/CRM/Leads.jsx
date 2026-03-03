@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { format } from 'date-fns'
 import { useToast } from '../../components/ui/Toast'
@@ -14,6 +14,7 @@ export default function Leads() {
     const [saving, setSaving] = useState(false)
     const [modalImport, setModalImport] = useState(false)
     const [importJson, setImportJson] = useState('')
+    const [sortOrder, setSortOrder] = useState('created_desc')
 
     const loadLeads = useCallback(async () => {
         setLoading(true)
@@ -180,6 +181,26 @@ export default function Leads() {
         }
     }
 
+    const sortLeadsByName = useCallback((leads, order) => {
+        if (order === 'created_desc') return leads
+        const direction = order === 'name_desc' ? -1 : 1
+        return [...leads].sort((a, b) => {
+            const nameA = (a?.name || '').toLowerCase()
+            const nameB = (b?.name || '').toLowerCase()
+            return nameA.localeCompare(nameB, 'pt-BR') * direction
+        })
+    }, [])
+
+    const sortedLeadsOnline = useMemo(
+        () => sortLeadsByName(leadsOnline, sortOrder),
+        [leadsOnline, sortLeadsByName, sortOrder]
+    )
+
+    const sortedLeadsRedes = useMemo(
+        () => sortLeadsByName(leadsRedes, sortOrder),
+        [leadsRedes, sortLeadsByName, sortOrder]
+    )
+
     const LeadTable = ({ leads, title, isOnline }) => (
         <div className="card" style={{ marginBottom: 24 }}>
             <div className="card-header">
@@ -294,14 +315,27 @@ export default function Leads() {
                 </div>
             </div>
 
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-body" style={{ padding: 12 }}>
+                    <div className="form-group" style={{ marginBottom: 0, maxWidth: 260 }}>
+                        <label className="form-label">Ordenacao</label>
+                        <select className="form-control" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+                            <option value="created_desc">Mais recentes</option>
+                            <option value="name_asc">Nome (A-Z)</option>
+                            <option value="name_desc">Nome (Z-A)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             {status && <div className="alert alert-success">{status}</div>}
 
             {loading ? (
                 <div className="loading"><div className="spinner" /></div>
             ) : (
                 <>
-                    <LeadTable leads={leadsOnline} title="Seção 1: Agendamentos Online" isOnline={true} />
-                    <LeadTable leads={leadsRedes} title="Seção 2: Leads de Redes Sociais" isOnline={false} />
+                    <LeadTable leads={sortedLeadsOnline} title="Seção 1: Agendamentos Online" isOnline={true} />
+                    <LeadTable leads={sortedLeadsRedes} title="Seção 2: Leads de Redes Sociais" isOnline={false} />
                 </>
             )}
 
