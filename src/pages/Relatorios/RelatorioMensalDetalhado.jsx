@@ -29,32 +29,72 @@ export default function RelatorioMensalDetalhado() {
         const rangeEnd = endOfWeek(monthEnd)
 
         try {
-            const [{ data: agendamentosData, error: agError }, { data: receitasData, error: recError }] = await Promise.all([
+            const [
+                { data: agendamentosData, error: agError },
+                { data: receitasCriadasData, error: recCriadasError },
+                { data: receitasVencimentoData, error: recVencError }
+            ] = await Promise.all([
                 supabase
                     .from('agendamentos')
-                    .select('id,data_inicio,created_at,situacao,motivo,patients(name)')
+                    .select('id,paciente_id,data_inicio,created_at,situacao,motivo')
                     .gte('data_inicio', rangeStart.toISOString())
                     .lte('data_inicio', rangeEnd.toISOString()),
                 supabase
                     .from('financeiro_receitas')
-                    .select('id,created_at,valor_total,status,patients(name)')
+                    .select('id,paciente_id,created_at,data_vencimento,valor_total,status')
                     .gte('created_at', rangeStart.toISOString())
-                    .lte('created_at', rangeEnd.toISOString())
+                    .lte('created_at', rangeEnd.toISOString()),
+                supabase
+                    .from('financeiro_receitas')
+                    .select('id,paciente_id,created_at,data_vencimento,valor_total,status')
+                    .gte('data_vencimento', format(rangeStart, 'yyyy-MM-dd'))
+                    .lte('data_vencimento', format(rangeEnd, 'yyyy-MM-dd'))
             ])
 
             if (agError) throw agError
-            if (recError) throw recError
+            if (recCriadasError) throw recCriadasError
+            if (recVencError) throw recVencError
 
             const agendamentos = agendamentosData || []
-            const receitas = receitasData || []
+            const receitasMap = {}
+            ;(receitasCriadasData || []).forEach((r) => { receitasMap[r.id] = r })
+            ;(receitasVencimentoData || []).forEach((r) => { receitasMap[r.id] = r })
+            const receitas = Object.values(receitasMap)
+            const patientIds = [
+                ...new Set([
+                    ...agendamentos.map((a) => a.paciente_id).filter(Boolean),
+                    ...receitas.map((r) => r.paciente_id).filter(Boolean)
+                ])
+            ]
+            const patientMap = {}
+
+            if (patientIds.length > 0) {
+                const { data: patientsData, error: pError } = await supabase
+                    .from('patients')
+                    .select('id,name')
+                    .in('id', patientIds)
+                if (!pError) {
+                    ;(patientsData || []).forEach((p) => {
+                        patientMap[p.id] = p.name
+                    })
+                }
+            }
 
             const days = eachDayOfInterval({ start: rangeStart, end: rangeEnd })
 
             const processed = days.map(day => {
-                const agendadosNoDia = agendamentos.filter(e => isSameDay(new Date(e.data_inicio), day))
+                const agendadosNoDia = agendamentos
+                    .filter(e => isSameDay(new Date(e.data_inicio), day))
+                    .map((e) => ({ ...e, patient_name: patientMap[e.paciente_id] || '-' }))
                 const compareceramNoDia = agendadosNoDia.filter(e => e.situacao === 'atendido')
                 const confirmadosNoDia = agendadosNoDia.filter(e => ['confirmado', 'agendado'].includes(e.situacao))
-                const vendasNoDia = receitas.filter(r => isSameDay(new Date(r.created_at), day))
+                const vendasNoDia = receitas
+                    .filter((r) => {
+                        if (r.created_at && isSameDay(new Date(r.created_at), day)) return true
+                        if (r.data_vencimento) return isSameDay(new Date(`${r.data_vencimento}T00:00:00`), day)
+                        return false
+                    })
+                    .map((r) => ({ ...r, patient_name: patientMap[r.paciente_id] || '-' }))
                 const novosAgendamentos = agendamentos.filter(e => e.created_at && isSameDay(new Date(e.created_at), day)).length
 
                 return {
@@ -93,7 +133,7 @@ export default function RelatorioMensalDetalhado() {
     }, [loadData])
 
     const renderPessoa = (item, prefix = 'Paciente') => {
-        const nome = item?.patients?.name || item?.patient_name || '-'
+        const nome = item?.patient_name || item?.patients?.name || '-'
         return (
             <div key={item.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
                 <strong>{nome}</strong>
@@ -246,7 +286,7 @@ export default function RelatorioMensalDetalhado() {
                                     ) : (
                                         selectedDay.detalhes.vendasNoDia.map((v) => (
                                             <div key={v.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
-                                                <strong>{v?.patients?.name || '-'}</strong>
+                                                <strong>{v?.patient_name || v?.patients?.name || '-'}</strong>
                                                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                                                     Valor: R$ {Number(v.valor_total || 0).toFixed(2)}
                                                 </div>

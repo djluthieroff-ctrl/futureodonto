@@ -146,7 +146,7 @@ export default function Dashboard() {
 
             // Usamos Promise.allSettled para evitar que um erro em uma tabela trave o dashboard inteiro
             const results = await Promise.allSettled([
-                supabase.from('leads').select('etapa', { count: 'exact' }),
+                supabase.from('leads').select('*'),
                 supabase
                     .from('agendamentos')
                     .select('id,situacao', { count: 'exact' })
@@ -195,7 +195,8 @@ export default function Dashboard() {
                 contagem[e] = 0
             })
             leadsData?.forEach((l) => {
-                if (contagem[l.etapa] !== undefined) contagem[l.etapa] += 1
+                const etapaLead = l.etapa || l.status || 'lead'
+                if (contagem[etapaLead] !== undefined) contagem[etapaLead] += 1
             })
 
             setFunil(etapas.map((e, i) => ({ key: e, label: etapasLabels[i], count: contagem[e], color: etapasCores[i] })))
@@ -221,15 +222,30 @@ export default function Dashboard() {
 
         setFunilDetalheModal({ open: true, etapa, leads: [], loading: true })
         try {
-            const { data: leadsData, error: leadsError } = await supabase
+            let leadsData = []
+
+            const etapaRes = await supabase
                 .from('leads')
-                .select('id,name,phone,email,convertido_em_paciente,paciente_id,created_at')
+                .select('*')
                 .eq('etapa', etapa.key)
                 .order('created_at', { ascending: false })
 
-            if (leadsError) throw leadsError
+            if (!etapaRes.error) {
+                leadsData = etapaRes.data || []
+            }
 
-            const leads = leadsData || []
+            if (etapaRes.error || leadsData.length === 0) {
+                const statusRes = await supabase
+                    .from('leads')
+                    .select('*')
+                    .eq('status', etapa.key)
+                    .order('created_at', { ascending: false })
+
+                if (statusRes.error) throw statusRes.error
+                leadsData = statusRes.data || []
+            }
+
+            const leads = leadsData
             const pacienteIds = [...new Set(leads.map((l) => l.paciente_id).filter(Boolean))]
             let pacienteMap = {}
 
@@ -249,6 +265,7 @@ export default function Dashboard() {
                 loading: false,
                 leads: leads.map((lead) => ({
                     ...lead,
+                    convertido_em_paciente: Boolean(lead.convertido_em_paciente || lead.paciente_id),
                     patient_name: pacienteMap[lead.paciente_id] || null,
                 })),
             })

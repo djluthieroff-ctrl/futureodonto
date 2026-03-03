@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { format, differenceInYears } from 'date-fns'
@@ -25,6 +25,7 @@ export default function ProntuarioPaciente() {
     const { id } = useParams()
     const navigate = useNavigate()
     const toast = useToast()
+    const toastRef = useRef(toast)
 
     const [paciente, setPaciente] = useState(null)
     const [agendamentos, setAgendamentos] = useState([])
@@ -41,30 +42,45 @@ export default function ProntuarioPaciente() {
     const [filtroEvolucao, setFiltroEvolucao] = useState('')
     const [quickAction, setQuickAction] = useState('')
 
+    useEffect(() => {
+        toastRef.current = toast
+    }, [toast])
+
     const load = useCallback(async () => {
         setLoading(true)
         try {
-            const [{ data: p, error: pError }, { data: ag, error: agError }, { data: an, error: anError }] = await Promise.all([
+            const [{ data: p, error: pError }, { data: ag, error: agError }] = await Promise.all([
                 supabase.from('patients').select('*').eq('id', id).single(),
                 supabase.from('agendamentos').select('*,dentistas(nome)').eq('paciente_id', id).order('data_inicio', { ascending: false }).limit(20),
-                supabase.from('paciente_anotacoes').select('*').eq('paciente_id', id).order('criado_em', { ascending: false }),
             ])
 
             if (pError) throw pError
             if (agError) throw agError
-            if (anError) throw anError
 
             setPaciente(p)
             setForm(p || {})
             setAgendamentos(ag || [])
-            setAnotacoes(an || [])
+
+            // Notas sao opcionais: se a tabela nao existir no ambiente, o prontuario continua abrindo.
+            const { data: an, error: anError } = await supabase
+                .from('paciente_anotacoes')
+                .select('*')
+                .eq('paciente_id', id)
+                .order('criado_em', { ascending: false })
+
+            if (anError) {
+                console.warn('Aviso ao carregar anotacoes do prontuario:', anError)
+                setAnotacoes([])
+            } else {
+                setAnotacoes(an || [])
+            }
         } catch (error) {
             console.error('Erro ao carregar prontuario:', error)
-            toast.error('Erro ao carregar dados do prontuario')
+            toastRef.current.error('Erro ao carregar dados do prontuario')
         } finally {
             setLoading(false)
         }
-    }, [id, toast])
+    }, [id])
 
     useEffect(() => {
         if (id && id !== 'novo') {
