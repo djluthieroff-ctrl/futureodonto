@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/useAuth'
+import { isAdminUser } from '../../lib/authz'
 
 const NAV_ITEMS = [
     {
@@ -94,17 +96,23 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
     const location = useLocation()
+    const { user } = useAuth()
+    const isAdmin = isAdminUser(user)
     const [openMenus, setOpenMenus] = useState({ '/crm': true, '/painel': true, '/agenda': true })
+    const visibleNavItems = useMemo(
+        () => NAV_ITEMS.filter((item) => item.path !== '/personalizar' || isAdmin),
+        [isAdmin]
+    )
 
     const activeParents = useMemo(() => {
         const next = {}
-        NAV_ITEMS.forEach((item) => {
+        visibleNavItems.forEach((item) => {
             if (location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)) {
                 next[item.path] = true
             }
         })
         return next
-    }, [location.pathname])
+    }, [location.pathname, visibleNavItems])
 
     const toggleMenu = (path) => {
         setOpenMenus((prev) => ({ ...prev, [path]: !prev[path] }))
@@ -137,7 +145,7 @@ export default function Sidebar() {
             </div>
 
             <nav className="sidebar-nav">
-                {NAV_ITEMS.map((item) => {
+                {visibleNavItems.map((item) => {
                     const hasChildren = item.children && item.children.length > 0
                     const active = isActive(item.path)
                     const isOpen = openMenus[item.path] || activeParents[item.path]

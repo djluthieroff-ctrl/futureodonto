@@ -2,6 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import AdminRoute from './components/auth/AdminRoute'
 import Login from './pages/Auth/Login'
 import ResetPassword from './pages/Auth/ResetPassword'
 import Layout from './components/layout/Layout'
@@ -71,8 +72,8 @@ export default function App() {
               <Route path="relatorios" element={<Navigate to="/relatorios/financeiro" replace />} />
               <Route path="relatorios/*" element={<Relatorios />} />
 
-              <Route path="personalizar" element={<Navigate to="/personalizar/geral" replace />} />
-              <Route path="personalizar/*" element={<Personalizar />} />
+              <Route path="personalizar" element={<AdminRoute><Navigate to="/personalizar/geral" replace /></AdminRoute>} />
+              <Route path="personalizar/*" element={<AdminRoute><Personalizar /></AdminRoute>} />
               <Route path="indicacao" element={<IndicacaoPremiada />} />
               <Route path="*" element={<Navigate to="/painel" replace />} />
             </Route>

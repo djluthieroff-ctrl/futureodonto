@@ -2,10 +2,12 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/useAuth'
+import { isAdminUser } from '../../lib/authz'
 
 export default function Header() {
     const navigate = useNavigate()
     const { user, signOut } = useAuth()
+    const isAdmin = isAdminUser(user)
     const [search, setSearch] = useState('')
     const [results, setResults] = useState([])
     const [searching, setSearching] = useState(false)
@@ -197,9 +199,11 @@ export default function Header() {
                 <button className="header-btn" title="Ajuda" id="header-help">
                     <i className="fa-regular fa-circle-question" />
                 </button>
-                <button className="header-btn" title="Configurações" id="header-settings" onClick={() => navigate('/personalizar')}>
-                    <i className="fa-solid fa-gear" />
-                </button>
+                {isAdmin && (
+                    <button className="header-btn" title="Configurações" id="header-settings" onClick={() => navigate('/personalizar')}>
+                        <i className="fa-solid fa-gear" />
+                    </button>
+                )}
                 <div className="header-dropdown-container">
                     <div className="header-avatar" id="header-avatar" title={user?.email || 'Perfil do usuário'}>
                         {user?.user_metadata?.name
@@ -211,10 +215,12 @@ export default function Header() {
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{user?.user_metadata?.name || 'Usuário'}</div>
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{user?.email}</div>
                         </div>
-                        <div className="header-dropdown-item" onClick={() => navigate('/personalizar')}>
-                            <i className="fa-solid fa-gear" />
-                            Configurações
-                        </div>
+                        {isAdmin && (
+                            <div className="header-dropdown-item" onClick={() => navigate('/personalizar')}>
+                                <i className="fa-solid fa-gear" />
+                                Configurações
+                            </div>
+                        )}
                         <div className="header-dropdown-item" onClick={async () => { await signOut(); navigate('/login') }} style={{ color: 'var(--danger)' }}>
                             <i className="fa-solid fa-right-from-bracket" />
                             Sair

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { ADMIN_EMAIL } from './authz'
 
 export async function syncUsuarioSistema(user) {
     if (!user?.id || !user?.email) return
@@ -12,7 +13,7 @@ export async function syncUsuarioSistema(user) {
         id: user.id,
         email: user.email,
         nome,
-        role: user.user_metadata?.role || 'usuario',
+        role: user.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : (user.user_metadata?.role || 'usuario'),
         ultimo_acesso: new Date().toISOString(),
         ativo: true,
     }
