@@ -420,7 +420,23 @@ export default function Leads() {
                                 return (
                                     <tr key={lead.id}>
                                         <td>{formattedDate}</td>
-                                        <td><strong>{lead.name}</strong></td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                {lead.convertido_em_paciente && (
+                                                    <span
+                                                        title="Convertido em paciente"
+                                                        style={{
+                                                            width: 10,
+                                                            height: 10,
+                                                            borderRadius: '50%',
+                                                            background: '#22C55E',
+                                                            display: 'inline-block'
+                                                        }}
+                                                    />
+                                                )}
+                                                <strong>{lead.name}</strong>
+                                            </div>
+                                        </td>
                                         <td>
                                             <div style={{ fontSize: 12 }}>{lead.phone}</div>
                                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lead.email}</div>

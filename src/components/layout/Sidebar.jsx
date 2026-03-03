@@ -75,6 +75,7 @@ const NAV_ITEMS = [
         children: [
             { label: 'Atendimentos', path: '/relatorios/atendimentos' },
             { label: 'Financeiro', path: '/relatorios/financeiro' },
+            { label: 'Mensal Detalhado', path: '/relatorios/detalhado' },
         ],
     },
     {

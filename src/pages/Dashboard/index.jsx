@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { format, subMonths, startOfMonth, subDays, addDays } from 'date-fns'
 
-function FunnelChart({ etapas }) {
+function FunnelChart({ etapas, onSelectEtapa }) {
     if (!etapas || etapas.length === 0) return null
 
     const maxWidth = 100
@@ -31,6 +31,7 @@ function FunnelChart({ etapas }) {
                             }}
                             onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.08)')}
                             onMouseLeave={e => (e.currentTarget.style.filter = '')}
+                            onClick={() => onSelectEtapa?.(etapa)}
                         >
                             <span style={{ color: 'white', fontSize: 13, fontWeight: 600 }}>{etapa.label}</span>
                             <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
@@ -126,6 +127,7 @@ export default function Dashboard() {
         tratamentosAbertos: 0,
     })
     const [funil, setFunil] = useState([])
+    const [funilDetalheModal, setFunilDetalheModal] = useState({ open: false, etapa: null, leads: [], loading: false })
     const [parcelas, setParcelas] = useState([])
     const [loading, setLoading] = useState(true)
     const [periodo] = useState({
@@ -196,7 +198,7 @@ export default function Dashboard() {
                 if (contagem[l.etapa] !== undefined) contagem[l.etapa] += 1
             })
 
-            setFunil(etapas.map((e, i) => ({ label: etapasLabels[i], count: contagem[e], color: etapasCores[i] })))
+            setFunil(etapas.map((e, i) => ({ key: e, label: etapasLabels[i], count: contagem[e], color: etapasCores[i] })))
             setParcelas(parcelasData)
             setMetrics({
                 aniversariantes,
@@ -212,6 +214,48 @@ export default function Dashboard() {
             console.error('Erro ao carregar dashboard:', e)
         }
         setLoading(false)
+    }, [])
+
+    const handleOpenEtapaDetalhe = useCallback(async (etapa) => {
+        if (!etapa?.key) return
+
+        setFunilDetalheModal({ open: true, etapa, leads: [], loading: true })
+        try {
+            const { data: leadsData, error: leadsError } = await supabase
+                .from('leads')
+                .select('id,name,phone,email,convertido_em_paciente,paciente_id,created_at')
+                .eq('etapa', etapa.key)
+                .order('created_at', { ascending: false })
+
+            if (leadsError) throw leadsError
+
+            const leads = leadsData || []
+            const pacienteIds = [...new Set(leads.map((l) => l.paciente_id).filter(Boolean))]
+            let pacienteMap = {}
+
+            if (pacienteIds.length > 0) {
+                const { data: patientsData } = await supabase
+                    .from('patients')
+                    .select('id,name')
+                    .in('id', pacienteIds)
+                ;(patientsData || []).forEach((p) => {
+                    pacienteMap[p.id] = p.name
+                })
+            }
+
+            setFunilDetalheModal({
+                open: true,
+                etapa,
+                loading: false,
+                leads: leads.map((lead) => ({
+                    ...lead,
+                    patient_name: pacienteMap[lead.paciente_id] || null,
+                })),
+            })
+        } catch (error) {
+            console.error('Erro ao carregar detalhe da etapa do funil:', error)
+            setFunilDetalheModal({ open: true, etapa, leads: [], loading: false })
+        }
     }, [])
 
     useEffect(() => {
@@ -345,7 +389,7 @@ export default function Dashboard() {
                                 <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.5px' }}>R$ 0,00</div>
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Valor medio por orcamento aprovado</span>
                             </div>
-                            <FunnelChart etapas={funil} />
+                            <FunnelChart etapas={funil} onSelectEtapa={handleOpenEtapaDetalhe} />
                         </div>
 
                         <div className="grid-2">
@@ -386,6 +430,60 @@ export default function Dashboard() {
                         </div>
                     </div>
                 </>
+            )}
+
+            {funilDetalheModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setFunilDetalheModal((prev) => ({ ...prev, open: false }))}>
+                    <div className="modal modal-md">
+                        <div className="modal-header">
+                            <div className="modal-title">
+                                {funilDetalheModal.etapa?.label || 'Etapa do funil'}
+                            </div>
+                            <button className="modal-close" onClick={() => setFunilDetalheModal((prev) => ({ ...prev, open: false }))}>
+                                <i className="fa-solid fa-xmark" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {funilDetalheModal.loading ? (
+                                <div className="loading"><div className="spinner" /></div>
+                            ) : funilDetalheModal.leads.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    Nenhum paciente/lead nesta etapa.
+                                </div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Nome</th>
+                                                <th>Telefone</th>
+                                                <th>E-mail</th>
+                                                <th>Paciente</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {funilDetalheModal.leads.map((lead) => (
+                                                <tr key={lead.id}>
+                                                    <td><strong>{lead.patient_name || lead.name}</strong></td>
+                                                    <td>{lead.phone || '-'}</td>
+                                                    <td>{lead.email || '-'}</td>
+                                                    <td>
+                                                        {lead.convertido_em_paciente ? (
+                                                            <span className="badge badge-success">Convertido</span>
+                                                        ) : (
+                                                            <span className="badge badge-outline">Lead</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )
