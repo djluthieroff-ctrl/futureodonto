@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { format, subMonths, startOfMonth, subDays, addDays } from 'date-fns'
+import { format, subMonths, startOfMonth, subDays, addDays, startOfWeek, endOfWeek } from 'date-fns'
 
 function FunnelChart({ etapas, onSelectEtapa }) {
     if (!etapas || etapas.length === 0) return null
@@ -118,7 +118,7 @@ export default function Dashboard() {
     const navigate = useNavigate()
     const [metrics, setMetrics] = useState({
         aniversariantes: 0,
-        indicacoes: 0,
+        agendamentosSemana: 0,
         faltaramDesmarcaram: 0,
         naoConfirmados: 0,
         orcamentosNaoAprovados: 0,
@@ -143,10 +143,18 @@ export default function Dashboard() {
             const prox72h = format(addDays(new Date(), 3), 'yyyy-MM-dd')
             const ha6meses = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+            const inicioSemana = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+            const fimSemana = format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
             // Usamos Promise.allSettled para evitar que um erro em uma tabela trave o dashboard inteiro
             const results = await Promise.allSettled([
                 supabase.from('leads').select('*'),
+                supabase
+                    .from('agendamentos')
+                    .select('id', { count: 'exact', head: true })
+                    .gte('data_inicio', `${inicioSemana}T00:00:00`)
+                    .lte('data_inicio', `${fimSemana}T23:59:59`)
+                    .eq('situacao', 'atendido'),
                 supabase
                     .from('agendamentos')
                     .select('id,situacao', { count: 'exact' })
@@ -160,7 +168,7 @@ export default function Dashboard() {
                 supabase.from('financeiro_parcelas').select('id,valor,data_vencimento,receita_id').eq('status', 'pendente').lte('data_vencimento', today).limit(20),
             ])
 
-            const [leadsRes, , faltaramRes, naoConfRes, orcNaoAprovRes, ausentesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
+            const [leadsRes, agSemanaRes, , faltaramRes, naoConfRes, orcNaoAprovRes, ausentesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
 
             const { data: aniversPs } = await supabase.from('patients').select('id,birth_date').not('birth_date', 'is', null)
             const aniversariantes = (aniversPs || []).filter((p) => p.birth_date?.split('-')[1] === mm).length
@@ -203,7 +211,7 @@ export default function Dashboard() {
             setParcelas(parcelasData)
             setMetrics({
                 aniversariantes,
-                indicacoes: 0,
+                agendamentosSemana: agSemanaRes.count || 0,
                 faltaramDesmarcaram: faltaramRes.count || 0,
                 naoConfirmados: naoConfRes.count || 0,
                 orcamentosNaoAprovados: orcNaoAprovRes.count || 0,
@@ -295,10 +303,10 @@ export default function Dashboard() {
         {
             icon: 'fa-share-nodes',
             iconBg: '#8B5CF6',
-            value: metrics.indicacoes,
-            label: 'Indicacoes de pacientes',
-            desc: 'Investimento para pacientes indicados',
-            period: 'Ultimos 30 dias',
+            value: metrics.agendamentosSemana,
+            label: 'Agendamentos realizados',
+            desc: 'Consultas atendidas na semana',
+            period: 'Esta semana',
         },
         {
             icon: 'fa-person-running',
