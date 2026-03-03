@@ -1,0 +1,283 @@
+.agenda-vertical-container {
+    padding: 24px;
+    background-color: #f8fafc;
+    min-height: 100vh;
+}
+
+.agenda-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+}
+
+.agenda-title-section h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+}
+
+.agenda-title-section p {
+    color: #64748b;
+    margin: 4px 0 0 0;
+}
+
+.btn-novo-agendamento {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-novo-agendamento:hover {
+    background-color: #1d4ed8;
+}
+
+.agenda-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: white;
+    padding: 16px 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 24px;
+}
+
+.date-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.nav-arrow {
+    background: #f1f5f9;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #475569;
+}
+
+.current-date-display {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    min-width: 200px;
+    text-align: center;
+}
+
+.date-picker-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.date-input {
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: #475569;
+}
+
+.btn-hoje {
+    background: #f1f5f9;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+}
+
+.kpi-cards {
+    display: flex;
+    gap: 16px;
+}
+
+.kpi-card {
+    background: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    text-align: center;
+    min-width: 100px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.kpi-value {
+    font-size: 24px;
+    font-weight: 700;
+    display: block;
+}
+
+.kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.kpi-card.total .kpi-value {
+    color: #1e293b;
+}
+
+.kpi-card.concluidos .kpi-value {
+    color: #10b981;
+}
+
+.kpi-card.pendentes .kpi-value {
+    color: #64748b;
+}
+
+.appointments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.appointment-row {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+
+.appointment-time {
+    font-size: 16px;
+    font-weight: 600;
+    color: #64748b;
+    padding-top: 20px;
+    min-width: 60px;
+}
+
+.appointment-card {
+    flex: 1;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-left: 4px solid #3b82f6;
+    position: relative;
+}
+
+.appointment-card.confirmado {
+    border-left-color: #10b981;
+}
+
+.appointment-card.atendido {
+    border-left-color: #06b6d4;
+}
+
+.appointment-card.faltou {
+    border-left-color: #ef4444;
+}
+
+.appointment-main-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.patient-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+}
+
+.appointment-details {
+    font-size: 14px;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.appointment-note {
+    font-style: italic;
+    color: #94a3b8;
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.appointment-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.btn-action {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.btn-whatsapp {
+    background: #25d366;
+    color: white;
+    border: none;
+}
+
+.btn-remarcar {
+    background: white;
+    color: #2563eb;
+    border-color: #e2e8f0;
+}
+
+.btn-edit {
+    background: #f1f5f9;
+    color: #475569;
+    padding: 6px 10px;
+}
+
+.btn-confirmar {
+    background: #10b981;
+    color: white;
+    border: none;
+}
+
+.btn-atendido {
+    background: #059669;
+    color: white;
+    border: none;
+}
+
+.btn-delete {
+    background: #fee2e2;
+    color: #ef4444;
+    padding: 6px 10px;
+}
+
+.status-badge {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}

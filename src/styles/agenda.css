@@ -1,0 +1,178 @@
+/* Estilos específicos da Agenda / FullCalendar */
+.agenda-container {
+    background: #F3F4F6;
+    height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Toolbar Superior */
+.agenda-toolbar-top {
+    background: #F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    gap: 4px;
+}
+
+.toolbar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    min-width: 60px;
+}
+
+.toolbar-item:hover {
+    background: #EDF2F7;
+}
+
+.toolbar-item i {
+    font-size: 16px;
+    color: #4A5568;
+    margin-bottom: 4px;
+}
+
+.toolbar-item span {
+    font-size: 10px;
+    font-weight: 600;
+    color: #4A5568;
+}
+
+.toolbar-item.danger i,
+.toolbar-item.danger span {
+    color: #E53E3E;
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 30px;
+    background: #E2E8F0;
+    margin: 0 8px;
+}
+
+/* Filtros */
+.agenda-filters-bar {
+    background: white;
+    border-bottom: 1px solid #CBD5E0;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.filter-group-main,
+.filter-group-side {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.filter-field label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #4A5568;
+}
+
+.field-with-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.field-with-search i {
+    position: absolute;
+    left: 8px;
+    font-size: 11px;
+    color: #A0AEC0;
+}
+
+.field-with-search select {
+    padding-left: 26px !important;
+}
+
+.agenda-filters-bar input,
+.agenda-filters-bar select {
+    height: 28px;
+    padding: 2px 8px;
+    font-size: 12px;
+    border: 1px solid #CBD5E0;
+    border-radius: 4px;
+    background: #F7FAFC;
+    color: #2D3748;
+}
+
+/* Calendário */
+.agenda-calendar-wrapper {
+    flex: 1;
+    background: white;
+    padding: 0;
+    overflow: auto;
+}
+
+.fc {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.fc .fc-col-header-cell {
+    background: #4A5568 !important;
+    padding: 0 !important;
+    border-color: #CBD5E0 !important;
+}
+
+.custom-day-header {
+    padding: 4px;
+    color: white !important;
+    text-align: center;
+}
+
+.custom-day-header .day-name {
+    font-size: 11px;
+    text-transform: capitalize;
+    font-weight: 600;
+    color: white !important;
+}
+
+.custom-day-header .day-date {
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.9;
+    color: white !important;
+}
+
+.fc .fc-timegrid-slot {
+    height: 32px !important;
+    border-color: #E2E8F0 !important;
+}
+
+.fc .fc-timegrid-slot-label {
+    font-size: 10px !important;
+    color: #718096 !important;
+    background: #F7FAFC;
+    border-right: 1px solid #CBD5E0;
+}
+
+.fc .fc-timegrid-col {
+    border-color: #CBD5E0 !important;
+}
+
+.fc .fc-event {
+    border-radius: 2px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.fc .fc-timegrid-now-indicator-line {
+    border-color: #E53E3E;
+}

@@ -1,0 +1,335 @@
+.modern-agenda-container {
+    background: #f1f5f9;
+    height: calc(100vh - 64px);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Header */
+.modern-agenda-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    background: white;
+    padding: 12px 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    letter-spacing: -0.5px;
+}
+
+.header-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #f8fafc;
+    padding: 3px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+}
+
+.nav-btn {
+    background: transparent;
+    border: none;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 7px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-btn:hover {
+    background: white;
+    color: #7c3aed;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.nav-btn-today {
+    background: transparent;
+    border: none;
+    padding: 0 10px;
+    height: 28px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    cursor: pointer;
+    border-radius: 7px;
+    transition: all 0.2s;
+}
+
+.nav-btn-today:hover {
+    background: white;
+    color: #7c3aed;
+}
+
+.header-date-range {
+    font-size: 14px;
+    font-weight: 700;
+    color: #334155;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.dentista-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    padding: 6px 12px;
+    border-radius: 10px;
+    color: #64748b;
+    transition: all 0.2s;
+}
+
+.dentista-selector:focus-within {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.dentista-selector select {
+    background: transparent;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    outline: none;
+    cursor: pointer;
+}
+
+.view-switcher {
+    display: flex;
+    background: #f8fafc;
+    padding: 3px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+}
+
+.view-switcher button {
+    background: transparent;
+    border: none;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 7px;
+    transition: all 0.2s;
+}
+
+.view-switcher button.active {
+    background: white;
+    color: #7c3aed;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.btn-new-appointment {
+    background: #7c3aed;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+}
+
+.btn-new-appointment:hover {
+    background: #6d28d9;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(124, 58, 237, 0.35);
+}
+
+/* Calendar Wrapper */
+.modern-calendar-wrapper {
+    flex: 1;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+    overflow: hidden;
+    padding: 10px;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+/* FullCalendar Customization */
+.fc {
+    border: none !important;
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th {
+    border-color: #f1f5f9 !important;
+}
+
+/* Day Header */
+.fc-col-header-cell {
+    padding: 15px 0 !important;
+    background: #475569 !important;
+    /* Dark slate background */
+    border: none !important;
+}
+
+.custom-modern-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.custom-modern-header .weekday {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff !important;
+    /* Forced white text */
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.custom-modern-header .daynum {
+    font-size: 20px;
+    font-weight: 800;
+    color: #ffffff !important;
+    /* Forced white text */
+}
+
+.fc-col-header-cell.fc-day-today .custom-modern-header .daynum {
+    color: #ffffff !important;
+    background: #7c3aed;
+    /* Primary purple for today */
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+/* Slots and Grid Lines */
+.fc-timegrid-slot {
+    height: 54px !important;
+    border-bottom: 1px dashed #e2e8f0 !important;
+    /* Horizontal dashed lines */
+}
+
+.fc-timegrid-slot-label {
+    border: none !important;
+}
+
+.fc-timegrid-slot-label-cushion {
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    /* Slightly darker */
+    padding-right: 12px !important;
+}
+
+.fc-timegrid-slot-minor {
+    border-top: 1px dashed #f1f5f9 !important;
+    /* Minor horizontal dashed lines */
+}
+
+/* Vertical dashed lines for columns */
+.fc-theme-standard .fc-timegrid-col {
+    border-left: 1px dashed #cbd5e1 !important;
+    /* Stronger vertical dashed lines */
+}
+
+.fc-theme-standard .fc-scrollgrid {
+    border: none !important;
+}
+
+/* Event Styling */
+.modern-event {
+    border-radius: 12px !important;
+    overflow: hidden;
+    padding: 6px 10px !important;
+    margin: 2px !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border: none !important;
+}
+
+.modern-event:hover {
+    transform: translateY(-2px) scale(1.01);
+    z-index: 10;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.modern-event-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.event-time {
+    font-size: 10px;
+    font-weight: 800;
+    color: white;
+    margin-bottom: 2px;
+    opacity: 0.9;
+}
+
+.event-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Slot Hover Effect */
+.fc-timegrid-slot:hover {
+    background-color: rgba(241, 245, 249, 0.5) !important;
+    cursor: pointer;
+}
+
+/* Scrollbar */
+.fc-scroller::-webkit-scrollbar {
+    width: 6px;
+}
+
+.fc-scroller::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.fc-scroller::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
+
+.fc-scroller::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e0;
+}
