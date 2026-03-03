@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { format } from 'date-fns'
 import { useToast } from '../../components/ui/Toast'
 
 export default function ModalAgendamento({ dataInicial, eventoExistente, dentistas, cadeiras, onClose }) {
@@ -188,13 +187,14 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
             const dataInicioIso = new Date(form.data_inicio).toISOString()
             const dataFimIso = form.data_fim ? new Date(form.data_fim).toISOString() : new Date(new Date(form.data_inicio).getTime() + 15 * 60000).toISOString()
 
-            const { tipo, valor, ...restForm } = form
             const appointmentPayload = {
-                ...restForm,
+                ...form,
                 paciente_id: patientData.id,
                 data_inicio: dataInicioIso,
                 data_fim: dataFimIso
             }
+            delete appointmentPayload.tipo
+            delete appointmentPayload.valor
 
             const { error: appError } = await supabase.from('agendamentos').insert([appointmentPayload])
 
@@ -289,12 +289,13 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
             const dataFimIso = form.data_fim ? new Date(form.data_fim).toISOString() : new Date(new Date(form.data_inicio).getTime() + 15 * 60000).toISOString()
 
             // Remove campos que não existem na tabela agendamentos
-            const { tipo, valor, ...rest } = form;
             const payload = {
-                ...rest,
+                ...form,
                 data_inicio: dataInicioIso,
                 data_fim: dataFimIso
             }
+            delete payload.tipo
+            delete payload.valor
 
             let result;
             if (isEdit) {

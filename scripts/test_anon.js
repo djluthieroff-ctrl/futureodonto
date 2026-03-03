@@ -1,4 +1,4 @@
-
+/* global process */
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 
@@ -10,12 +10,11 @@ const newSupabase = createClient(newUrl, newKey)
 
 async function createLeadsViaAuth() {
     console.log('Tentando logar para criar leads...')
-    const email = 'gustavogolec138@gmail.com'
     // Como não tenho a senha, vou tentar criar um usuário ou usar o anon se a política permitir.
     // Mas a política "public_insert_leads" deveria permitir anon.
 
     // Tentar criar um lead com campos ABSOLUTAMENTE mínimos para anon
-    const { data, error } = await newSupabase
+    const { error } = await newSupabase
         .from('leads')
         .insert([{ name: 'Teste Anon' }])
         .select()

@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 
@@ -16,7 +15,7 @@ async function checkTables() {
     const tables = ['leads', 'patients', 'agendamentos', 'appointments', 'old_patients']
 
     for (const table of tables) {
-        const { data, error, count } = await oldSupabase
+        const { error, count } = await oldSupabase
             .from(table)
             .select('*', { count: 'exact', head: true })
 

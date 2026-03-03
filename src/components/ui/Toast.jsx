@@ -1,9 +1,14 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 const ToastContext = createContext(null)
 
 export function ToastProvider({ children }) {
     const [toasts, setToasts] = useState([])
+
+    const removeToast = useCallback((id) => {
+        setToasts(prev => prev.filter(t => t.id !== id))
+    }, [])
 
     const addToast = useCallback((message, type = 'success', duration = 4000) => {
         const id = Date.now() + Math.random()
@@ -12,11 +17,7 @@ export function ToastProvider({ children }) {
             setTimeout(() => removeToast(id), duration)
         }
         return id
-    }, [])
-
-    const removeToast = useCallback((id) => {
-        setToasts(prev => prev.filter(t => t.id !== id))
-    }, [])
+    }, [removeToast])
 
     const toast = {
         success: (msg, duration) => addToast(msg, 'success', duration),

@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import { supabase } from '../../lib/supabase'
 
 import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 
 const ConfiguracaoCard = ({ item, onClick }) => (
     <div className="card" style={{ cursor: 'pointer', transition: 'all 0.2s' }}
@@ -84,7 +83,10 @@ const Dentistas = () => {
         setLoading(false)
     }, [])
 
-    useEffect(() => { load() }, [load])
+    useEffect(() => {
+        const timer = setTimeout(() => { load() }, 0)
+        return () => clearTimeout(timer)
+    }, [load])
 
     return (
         <div className="card">
@@ -148,7 +150,10 @@ const Usuarios = () => {
         setLoading(false)
     }, [])
 
-    useEffect(() => { load() }, [load])
+    useEffect(() => {
+        const timer = setTimeout(() => { load() }, 0)
+        return () => clearTimeout(timer)
+    }, [load])
 
     return (
         <div className="card">

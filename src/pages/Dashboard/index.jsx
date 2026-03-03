@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { format, subMonths, startOfMonth, subDays, addDays } from 'date-fns'
-import { useToast } from '../../components/ui/Toast'
 
 function FunnelChart({ etapas }) {
     if (!etapas || etapas.length === 0) return null
@@ -75,7 +74,7 @@ function ParcelasAtraso({ parcelas }) {
                     <div className="card-title">Pacientes com parcelas em atraso</div>
                     <div className="card-subtitle">Valores em aberto no financeiro</div>
                 </div>
-                <button className="btn btn-sm btn-outline" onClick={() => navigate('/financeiro')}>Ver todos</button>
+                <Link className="btn btn-sm btn-outline" to="/financeiro">Ver todos</Link>
             </div>
             {parcelas.length === 0 ? (
                 <div className="empty-state" style={{ padding: '30px 20px' }}>
@@ -116,7 +115,6 @@ function ParcelasAtraso({ parcelas }) {
 
 export default function Dashboard() {
     const navigate = useNavigate()
-    const toast = useToast()
     const [metrics, setMetrics] = useState({
         aniversariantes: 0,
         indicacoes: 0,

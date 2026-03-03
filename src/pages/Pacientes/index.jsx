@@ -30,7 +30,7 @@ export default function Pacientes() {
         setPacientes(data || [])
         setTotalCount(count || 0)
         setLoading(false)
-    }, [search])
+    }, [search, toast])
 
     useEffect(() => {
         const timer = setTimeout(() => { loadPacientes() }, 0)

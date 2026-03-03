@@ -58,7 +58,7 @@ export default function Financeiro() {
         } finally {
             setLoading(false)
         }
-    }, [tab, loadFluxo])
+    }, [tab, loadFluxo, toast])
 
     useEffect(() => {
         const timer = setTimeout(() => { loadFinanceiro() }, 0)

@@ -4,7 +4,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import ptBrLocale from '@fullcalendar/core/locales/pt-br'
 import { supabase } from '../../lib/supabase'
-import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns'
+import { format, addDays, isSameDay, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ModalAgendamento from './ModalAgendamento'
 import { useToast } from '../../components/ui/Toast'
@@ -159,7 +159,7 @@ export default function Agenda({ defaultView = 'calendar' }) {
                 toast.success('Agendamento remarcado com sucesso!')
                 loadEventos()
             }
-        } catch (err) {
+        } catch {
             info.revert()
             toast.error('Erro inesperado ao mover agendamento.')
         }
@@ -194,12 +194,6 @@ export default function Agenda({ defaultView = 'calendar' }) {
     }
 
     const renderHeader = () => {
-        const start = startOfWeek(currentDate, { weekStartsOn: 0 })
-        const end = addDays(start, 6)
-        const dateRange = viewMode === 'timeGridWeek' && viewType === 'calendar'
-            ? `${format(start, 'dd MMM', { locale: ptBR })} - ${format(end, 'dd MMM yyyy', { locale: ptBR })}`
-            : format(currentDate, 'dd MMMM yyyy', { locale: ptBR })
-
         return (
             <div className="modern-agenda-header">
                 <div className="header-left">
