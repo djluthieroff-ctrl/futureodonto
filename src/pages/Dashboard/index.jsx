@@ -130,8 +130,8 @@ export default function Dashboard() {
     })
     const [funil, setFunil] = useState([])
     const [funilDetalheModal, setFunilDetalheModal] = useState({ open: false, etapa: null, leads: [], loading: false })
-    const [agendamentosSemanaModal, setAgendamentosSemanaModal] = useState({ open: false, agendamentos: [], loading: false })
-    const [pastaVermelhaModal, setPastaVermelhaModal] = useState({ open: false, leads: [], loading: false })
+    const [agSemanaModal, setAgSemanaModal] = useState({ open: false, agendamentos: [], loading: false })
+    const [pVermelhaModal, setPVermelhaModal] = useState({ open: false, leads: [], loading: false })
     const [parcelas, setParcelas] = useState([])
     const [loading, setLoading] = useState(true)
     const [currentDate, setCurrentDate] = useState(new Date())
@@ -341,7 +341,8 @@ export default function Dashboard() {
     }, [currentDate])
 
     const handleOpenAgendamentosSemana = useCallback(async () => {
-        setAgendamentosSemanaModal({ open: true, agendamentos: [], loading: true })
+        console.log('Abrindo agendamentos semana...');
+        setAgSemanaModal({ open: true, agendamentos: [], loading: true })
         try {
             const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
             const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -355,10 +356,10 @@ export default function Dashboard() {
                 .order('data_inicio', { ascending: true })
 
             if (error) throw error
-            setAgendamentosSemanaModal({ open: true, agendamentos: data || [], loading: false })
+            setAgSemanaModal({ open: true, agendamentos: data || [], loading: false })
         } catch (error) {
             console.error('Erro ao abrir agendamentos da semana:', error)
-            setAgendamentosSemanaModal({ open: false, agendamentos: [], loading: false })
+            setAgSemanaModal({ open: false, agendamentos: [], loading: false })
         }
     }, [currentDate])
 
@@ -650,19 +651,19 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {agendamentosSemanaModal.open && (
-                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setAgendamentosSemanaModal(prev => ({ ...prev, open: false }))}>
+            {agSemanaModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setAgSemanaModal(prev => ({ ...prev, open: false }))}>
                     <div className="modal modal-md">
                         <div className="modal-header">
                             <div className="modal-title">Agendamentos Realizados (Semana)</div>
-                            <button className="modal-close" onClick={() => setAgendamentosSemanaModal(prev => ({ ...prev, open: false }))}>
+                            <button className="modal-close" onClick={() => setAgSemanaModal(prev => ({ ...prev, open: false }))}>
                                 <i className="fa-solid fa-xmark" />
                             </button>
                         </div>
                         <div className="modal-body">
-                            {agendamentosSemanaModal.loading ? (
+                            {agSemanaModal.loading ? (
                                 <div className="loading"><div className="spinner" /></div>
-                            ) : agendamentosSemanaModal.agendamentos.length === 0 ? (
+                            ) : agSemanaModal.agendamentos.length === 0 ? (
                                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum agendamento atendido nesta semana.</div>
                             ) : (
                                 <div className="table-wrapper">
@@ -675,7 +676,7 @@ export default function Dashboard() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {agendamentosSemanaModal.agendamentos.map(ag => (
+                                            {agSemanaModal.agendamentos.map(ag => (
                                                 <tr key={ag.id}>
                                                     <td><strong>{ag.patients?.name || 'Paciente'}</strong></td>
                                                     <td>{format(parseISO(ag.data_inicio), "dd/MM 'às' HH:mm")}</td>
@@ -691,19 +692,19 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {pastaVermelhaModal.open && (
-                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPastaVermelhaModal(prev => ({ ...prev, open: false }))}>
+            {pVermelhaModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPVermelhaModal(prev => ({ ...prev, open: false }))}>
                     <div className="modal modal-md">
                         <div className="modal-header">
                             <div className="modal-title">Pasta Vermelha (Não Fecharam)</div>
-                            <button className="modal-close" onClick={() => setPastaVermelhaModal(prev => ({ ...prev, open: false }))}>
+                            <button className="modal-close" onClick={() => setPVermelhaModal(prev => ({ ...prev, open: false }))}>
                                 <i className="fa-solid fa-xmark" />
                             </button>
                         </div>
                         <div className="modal-body">
-                            {pastaVermelhaModal.loading ? (
+                            {pVermelhaModal.loading ? (
                                 <div className="loading"><div className="spinner" /></div>
-                            ) : pastaVermelhaModal.leads.length === 0 ? (
+                            ) : pVermelhaModal.leads.length === 0 ? (
                                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum orçamento pendente nesta etapa.</div>
                             ) : (
                                 <div className="table-wrapper">
@@ -716,7 +717,7 @@ export default function Dashboard() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {pastaVermelhaModal.leads.map(lead => (
+                                            {pVermelhaModal.leads.map(lead => (
                                                 <tr key={lead.id}>
                                                     <td><strong>{lead.patient_name || lead.name}</strong></td>
                                                     <td>{lead.scheduled_at ? format(parseISO(lead.scheduled_at), 'dd/MM/yyyy') : '-'}</td>
