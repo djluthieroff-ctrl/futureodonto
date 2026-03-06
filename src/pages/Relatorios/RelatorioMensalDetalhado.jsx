@@ -13,12 +13,30 @@ import {
     isSameDay
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { exportToCSV } from '../../utils/export'
 
 export default function RelatorioMensalDetalhado() {
     const [currentDate, setCurrentDate] = useState(new Date())
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState([])
     const [selectedDay, setSelectedDay] = useState(null)
+
+    const handleExport = () => {
+        if (!data || data.length === 0) return
+
+        const allDays = data.flat().filter(d => d.isCurrentMonth)
+        const exportData = allDays.map(d => ({
+            'Data': format(d.day, 'dd/MM/yyyy'),
+            'Dia da Semana': format(d.day, 'EEEE', { locale: ptBR }),
+            'Agendamentos Criados': d.novosAgendamentos,
+            'Visitas Previstas': d.confirmados,
+            'Compareceram': d.compareceram,
+            'Vendas': d.vendas
+        }))
+
+        const fileName = `Relatorio_Mensal_${format(currentDate, 'MMMM_yyyy', { locale: ptBR })}.csv`
+        exportToCSV(exportData, fileName)
+    }
 
     const loadData = useCallback(async () => {
         setLoading(true)
@@ -36,7 +54,7 @@ export default function RelatorioMensalDetalhado() {
             ] = await Promise.all([
                 supabase
                     .from('agendamentos')
-                    .select('id,paciente_id,data_inicio,created_at,situacao,motivo')
+                    .select('id,paciente_id,data_inicio,created_at,situacao,motivo,tipo,patients(name)')
                     .gte('data_inicio', rangeStart.toISOString())
                     .lte('data_inicio', rangeEnd.toISOString()),
                 supabase
@@ -57,9 +75,10 @@ export default function RelatorioMensalDetalhado() {
 
             const agendamentos = agendamentosData || []
             const receitasMap = {}
-            ;(receitasCriadasData || []).forEach((r) => { receitasMap[r.id] = r })
-            ;(receitasVencimentoData || []).forEach((r) => { receitasMap[r.id] = r })
+                ; (receitasCriadasData || []).forEach((r) => { receitasMap[r.id] = r })
+                ; (receitasVencimentoData || []).forEach((r) => { receitasMap[r.id] = r })
             const receitas = Object.values(receitasMap)
+
             const patientIds = [
                 ...new Set([
                     ...agendamentos.map((a) => a.paciente_id).filter(Boolean),
@@ -74,7 +93,7 @@ export default function RelatorioMensalDetalhado() {
                     .select('id,name')
                     .in('id', patientIds)
                 if (!pError) {
-                    ;(patientsData || []).forEach((p) => {
+                    ; (patientsData || []).forEach((p) => {
                         patientMap[p.id] = p.name
                     })
                 }
@@ -85,26 +104,38 @@ export default function RelatorioMensalDetalhado() {
             const processed = days.map(day => {
                 const agendadosNoDia = agendamentos
                     .filter(e => isSameDay(new Date(e.data_inicio), day))
-                    .map((e) => ({ ...e, patient_name: patientMap[e.paciente_id] || '-' }))
+                    .map((e) => ({ ...e, patient_name: e.patients?.name || patientMap[e.paciente_id] || '-' }))
+
+                // Indicador 2: Compareceram (User Check)
                 const compareceramNoDia = agendadosNoDia.filter(e => e.situacao === 'atendido')
-                const confirmadosNoDia = agendadosNoDia.filter(e => ['confirmado', 'agendado'].includes(e.situacao))
-                const vendasNoDia = receitas
-                    .filter((r) => {
+
+                // Indicador 1: Quem estava para visitar (Clock) - Todo o agendamento do dia
+                const totalVisitasPrevistas = agendadosNoDia.length
+
+                // Indicador 4: Quem fechou venda (Sack Dollar)
+                const vendasNoDia = [
+                    ...receitas.filter((r) => {
                         if (r.created_at && isSameDay(new Date(r.created_at), day)) return true
-                        if (r.data_vencimento) return isSameDay(new Date(`${r.data_vencimento}T00:00:00`), day)
+                        if (r.data_vencimento) {
+                            const [year, month, d] = r.data_vencimento.split('-').map(Number);
+                            return isSameDay(new Date(year, month - 1, d), day);
+                        }
                         return false
-                    })
-                    .map((r) => ({ ...r, patient_name: patientMap[r.paciente_id] || '-' }))
-                const novosAgendamentos = agendamentos.filter(e => e.created_at && isSameDay(new Date(e.created_at), day)).length
+                    }).map((r) => ({ ...r, patient_name: patientMap[r.paciente_id] || '-' })),
+                    ...agendadosNoDia.filter(a => a.tipo === 'venda')
+                ]
+
+                // Indicador 3: Quem foi agendado aquele dia (Calendar Plus) - Data de criação
+                const novosAgendamentosNoDia = agendamentos.filter(e => e.created_at && isSameDay(new Date(e.created_at), day)).length
 
                 return {
                     day,
                     isCurrentMonth: isSameMonth(day, monthStart),
-                    agendados: agendadosNoDia.length,
-                    confirmados: confirmadosNoDia.length,
+                    agendados: totalVisitasPrevistas,
+                    confirmados: totalVisitasPrevistas, // No UI, confirmados é o ícone de relógio (Visitas para o dia)
                     compareceram: compareceramNoDia.length,
                     vendas: vendasNoDia.length,
-                    novosAgendamentos,
+                    novosAgendamentos: novosAgendamentosNoDia,
                     detalhes: {
                         agendadosNoDia,
                         compareceramNoDia,
@@ -167,7 +198,12 @@ export default function RelatorioMensalDetalhado() {
                 <div style={{ display: 'flex', gap: 20, fontSize: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#22C55E' }} /> Meta Batida</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF4444' }} /> Pendente</div>
-                    <button className="btn btn-sm btn-secondary"><i className="fa-solid fa-file-excel" /> Exportar Mensal (.xlsx)</button>
+                    <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleExport}
+                    >
+                        <i className="fa-solid fa-file-excel" /> Exportar Mensal (.xlsx)
+                    </button>
                 </div>
             </div>
 
@@ -183,11 +219,11 @@ export default function RelatorioMensalDetalhado() {
                                     <div style={{ fontSize: 14, fontWeight: 700 }}>Semana {wIdx + 1}</div>
                                     <div style={{ display: 'flex', gap: 30, fontSize: 12 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <i className="fa-solid fa-calendar-check" style={{ color: '#6366F1' }} /> Agendamentos:
+                                            <i className="fa-solid fa-calendar-check" style={{ color: '#6366F1' }} /> Visitas Previstas:
                                             <span style={{ fontWeight: 700, color: '#0F172A' }}> {totalAg}</span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <i className="fa-solid fa-user-check" style={{ color: '#8B5CF6' }} /> Visitas:
+                                            <i className="fa-solid fa-user-check" style={{ color: '#8B5CF6' }} /> Compareceram:
                                             <span style={{ fontWeight: 700, color: '#0F172A' }}> {totalComp}</span>
                                         </div>
                                     </div>
@@ -217,11 +253,11 @@ export default function RelatorioMensalDetalhado() {
 
                                             <div className="metrics-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                                 <div className="metric-item" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
-                                                    <i className="fa-solid fa-calendar-plus" style={{ width: 14, color: '#64748B' }} title="Agendamentos Criados" />
+                                                    <i className="fa-solid fa-calendar-plus" style={{ width: 14, color: '#64748B' }} title="Agendamentos Criados Hoje" />
                                                     <span style={{ fontWeight: 700 }}>{dayObj.novosAgendamentos}</span>
                                                 </div>
                                                 <div className="metric-item" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
-                                                    <i className="fa-solid fa-clock" style={{ width: 14, color: '#64748B' }} title="Previstos" />
+                                                    <i className="fa-solid fa-clock" style={{ width: 14, color: '#64748B' }} title="Visitas para o dia" />
                                                     <span style={{ fontWeight: 700 }}>{dayObj.confirmados}</span>
                                                 </div>
                                                 <div className="metric-item" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
@@ -244,7 +280,7 @@ export default function RelatorioMensalDetalhado() {
 
             {selectedDay && (
                 <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setSelectedDay(null)}>
-                    <div className="modal modal-lg">
+                    <div className="modal modal-lg" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                         <div className="modal-header">
                             <div className="modal-title">
                                 Detalhes do dia {format(selectedDay.day, 'dd/MM/yyyy')}
@@ -254,8 +290,15 @@ export default function RelatorioMensalDetalhado() {
                             </button>
                         </div>
 
-                        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                            <div className="card" style={{ margin: 0 }}>
+                        <div className="modal-body" style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                            gap: 16,
+                            padding: '16px'
+                        }}>
+                            <div className="card" style={{ margin: 0, height: 'fit-content' }}>
                                 <div className="card-header"><div className="card-title">Agendados no dia</div></div>
                                 <div style={{ padding: '0 16px 12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
                                     Total: {selectedDay.detalhes.agendadosNoDia.length}
@@ -265,7 +308,7 @@ export default function RelatorioMensalDetalhado() {
                                 </div>
                             </div>
 
-                            <div className="card" style={{ margin: 0 }}>
+                            <div className="card" style={{ margin: 0, height: 'fit-content' }}>
                                 <div className="card-header"><div className="card-title">Compareceram</div></div>
                                 <div style={{ padding: '0 16px 12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
                                     Total: {selectedDay.detalhes.compareceramNoDia.length}
@@ -275,7 +318,7 @@ export default function RelatorioMensalDetalhado() {
                                 </div>
                             </div>
 
-                            <div className="card" style={{ margin: 0 }}>
+                            <div className="card" style={{ margin: 0, height: 'fit-content' }}>
                                 <div className="card-header"><div className="card-title">Fecharam venda</div></div>
                                 <div style={{ padding: '0 16px 12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
                                     Total: {selectedDay.detalhes.vendasNoDia.length}
@@ -296,7 +339,7 @@ export default function RelatorioMensalDetalhado() {
                                 </div>
                             </div>
 
-                            <div className="card" style={{ margin: 0 }}>
+                            <div className="card" style={{ margin: 0, height: 'fit-content' }}>
                                 <div className="card-header"><div className="card-title">Resumo do dia</div></div>
                                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                                     <div><strong>Novos agendamentos criados:</strong> {selectedDay.novosAgendamentos}</div>

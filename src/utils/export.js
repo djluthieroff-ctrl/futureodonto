@@ -18,7 +18,7 @@ export const exportToCSV = (data, filename = 'export.csv') => {
         }).join(',');
     });
 
-    const csvContent = [headers, ...rows].join('\n');
+    const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
 
