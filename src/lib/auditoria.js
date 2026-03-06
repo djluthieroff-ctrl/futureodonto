@@ -18,22 +18,16 @@ export async function syncUsuarioSistema(user) {
         ativo: true,
     }
 
-    // Tentativas para compatibilizar schemas diferentes em produção.
-    const tryPayloads = [
-        payload,
-        { id: payload.id, email: payload.email, nome: payload.nome, ultimo_acesso: payload.ultimo_acesso },
-        { id: payload.id, email: payload.email, nome: payload.nome },
-        { id: payload.id, email: payload.email },
-    ]
-
+    // Desativado temporariamente para evitar erros 400/403 no console
+    // devido a falta de permissões RLS ou tabela inexistente em alguns ambientes.
+    /*
     try {
         for (const current of tryPayloads) {
             const { error } = await supabase.from('usuarios_sistema').upsert(current)
             if (!error) return
         }
-    } catch (e) {
-        // Silenciar erros de rede ou permissão para não travar o app
-    }
+    } catch (e) {}
+    */
 }
 
 export async function registrarAuditoria({ acao, modulo, detalhes = null, user = null }) {

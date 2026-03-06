@@ -198,6 +198,7 @@ export default function Dashboard() {
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
             const leadsData = leadsRes.data || []
+            const totalLeads = leadsData.length
 
             const contagem = {}
             etapas.forEach((e) => {
@@ -208,7 +209,13 @@ export default function Dashboard() {
                 if (contagem[etapaLead] !== undefined) contagem[etapaLead] += 1
             })
 
-            setFunil(etapas.map((e, i) => ({ key: e, label: etapasLabels[i], count: contagem[e], color: etapasCores[i] })))
+            // Ajustamos o funil para que a primeira etapa seja o TOTAL de leads
+            const funnelItems = etapas.map((e, i) => {
+                const count = e === 'lead' ? totalLeads : contagem[e]
+                return { key: e, label: etapasLabels[i], count, color: etapasCores[i] }
+            })
+
+            setFunil(funnelItems)
             setParcelas(parcelasData)
             setMetrics({
                 aniversariantes,
