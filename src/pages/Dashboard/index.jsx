@@ -244,12 +244,13 @@ export default function Dashboard() {
             setMetrics({
                 aniversariantes,
                 agendamentosSemana: agSemanaRes.count || 0,
-                faltaramDesmarcaram: faltaramRes.count || 0,
+                faltaramDesmarcaram: faltaramNoPeriodo.length, // Sincronizado com o funil
                 naoConfirmados: naoConfRes.count || 0,
                 orcamentosNaoAprovados: orcNaoAprovRes.count || 0,
                 pacientesAusentes: ausentesRes.count || 0,
                 ticketsAbertos: 0,
                 tratamentosAbertos: 0,
+                pastaVermelha: funnelData.orcamento_perdido
             })
         } catch (e) {
             console.error('Erro ao carregar dashboard:', e)
@@ -336,6 +337,75 @@ export default function Dashboard() {
         }
     }, [currentDate])
 
+    const handleOpenAgendamentosSemana = useCallback(async () => {
+        setAgendamentosSemanaModal({ open: true, agendamentos: [], loading: true })
+        try {
+            const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+            const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+
+            const { data, error } = await supabase
+                .from('agendamentos')
+                .select('id, data_inicio, situacao, motivo, patients(name)')
+                .gte('data_inicio', `${inicioSemana}T00:00:00`)
+                .lte('data_inicio', `${fimSemana}T23:59:59`)
+                .eq('situacao', 'atendido')
+                .order('data_inicio', { ascending: true })
+
+            if (error) throw error
+            setAgendamentosSemanaModal({ open: true, agendamentos: data || [], loading: false })
+        } catch (error) {
+            console.error('Erro ao abrir agendamentos da semana:', error)
+            setAgendamentosSemanaModal({ open: false, agendamentos: [], loading: false })
+        }
+    }, [currentDate])
+
+    const handleOpenPastaVermelha = useCallback(async () => {
+        setPastaVermelhaModal({ open: true, leads: [], loading: true })
+        try {
+            const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
+            const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
+            const prefix = inicioMes.slice(0, 7)
+
+            const { data, error } = await supabase
+                .from('leads')
+                .select('*')
+                .or(`created_at.gte.${inicioMes},scheduled_at.gte.${inicioMes}`)
+                .or(`created_at.lte.${fimMes}T23:59:59,scheduled_at.lte.${fimMes}T23:59:59`)
+                .order('scheduled_at', { ascending: true })
+
+            if (error) throw error
+
+            // Lógica Pasta Vermelha: Atendidos mas não vendidos
+            const pastaVermelhaLeads = (data || []).filter(l => {
+                const refDate = (l.scheduled_at || l.created_at)
+                const isNoMes = refDate?.startsWith(prefix)
+                const foiAtendido = l.attended === true || l.etapa === 'atendido'
+                const naoVendeu = l.sale_status !== 'sold' && l.etapa !== 'orcamento_aprovado'
+                return isNoMes && foiAtendido && naoVendeu
+            })
+
+            const pacienteIds = [...new Set(pastaVermelhaLeads.map((l) => l.paciente_id).filter(Boolean))]
+            let pacienteMap = {}
+
+            if (pacienteIds.length > 0) {
+                const { data: patientsData } = await supabase.from('patients').select('id,name').in('id', pacienteIds)
+                patientsData?.forEach((p) => { pacienteMap[p.id] = p.name })
+            }
+
+            setPastaVermelhaModal({
+                open: true,
+                loading: false,
+                leads: pastaVermelhaLeads.map(l => ({
+                    ...l,
+                    patient_name: pacienteMap[l.paciente_id] || l.name
+                }))
+            })
+        } catch (error) {
+            console.error('Erro ao abrir pasta vermelha:', error)
+            setPastaVermelhaModal({ open: false, leads: [], loading: false })
+        }
+    }, [currentDate])
+
     useEffect(() => {
         loadDashboard()
     }, [loadDashboard])
@@ -357,6 +427,7 @@ export default function Dashboard() {
             label: 'Agendamentos realizados',
             desc: 'Consultas atendidas na semana',
             period: 'Esta semana',
+            onClick: handleOpenAgendamentosSemana,
         },
         {
             icon: 'fa-person-running',
@@ -365,7 +436,7 @@ export default function Dashboard() {
             label: 'Faltaram ou desmarcaram',
             desc: 'Pacientes nao reagendados',
             period: 'Ultimos 30 dias',
-            onClick: () => navigate('/crm/kpis/faltaram_desmarcaram'),
+            onClick: () => handleOpenEtapaDetalhe({ key: 'faltou_desmarcaram', label: 'Faltaram ou desmarcaram' }),
         },
         {
             icon: 'fa-calendar-xmark',
@@ -383,6 +454,7 @@ export default function Dashboard() {
             label: 'Orcamentos nao aprovados',
             desc: 'Em orcamentos nao aprovados',
             period: 'Ultimos 30 dias',
+            onClick: () => handleOpenEtapaDetalhe({ key: 'orcamento_criado', label: 'Orcamentos criados (Não aprovados)' }),
         },
         {
             icon: 'fa-user-clock',
@@ -394,12 +466,13 @@ export default function Dashboard() {
             onClick: () => navigate('/crm/kpis/nao_agendaram'),
         },
         {
-            icon: 'fa-ticket',
+            icon: 'fa-folder-open',
             iconBg: '#EC4899',
-            value: metrics.ticketsAbertos,
-            label: 'Pacientes com maiores tickets',
-            desc: 'Receita gerada por estes pacientes',
-            period: 'Ultimos 12 meses',
+            value: metrics.pastaVermelha,
+            label: 'Pasta Vermelha',
+            desc: 'Orcamentos feitos mas nao fechados',
+            period: 'Este mes',
+            onClick: handleOpenPastaVermelha,
         },
         {
             icon: 'fa-tooth',
@@ -563,6 +636,88 @@ export default function Dashboard() {
                                                             <span className="badge badge-outline">Lead</span>
                                                         )}
                                                     </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {agendamentosSemanaModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setAgendamentosSemanaModal(prev => ({ ...prev, open: false }))}>
+                    <div className="modal modal-md">
+                        <div className="modal-header">
+                            <div className="modal-title">Agendamentos Realizados (Semana)</div>
+                            <button className="modal-close" onClick={() => setAgendamentosSemanaModal(prev => ({ ...prev, open: false }))}>
+                                <i className="fa-solid fa-xmark" />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            {agendamentosSemanaModal.loading ? (
+                                <div className="loading"><div className="spinner" /></div>
+                            ) : agendamentosSemanaModal.agendamentos.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum agendamento atendido nesta semana.</div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Paciente</th>
+                                                <th>Data/Hora</th>
+                                                <th>Motivo</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {agendamentosSemanaModal.agendamentos.map(ag => (
+                                                <tr key={ag.id}>
+                                                    <td><strong>{ag.patients?.name || 'Paciente'}</strong></td>
+                                                    <td>{format(parseISO(ag.data_inicio), "dd/MM 'às' HH:mm")}</td>
+                                                    <td>{ag.motivo || 'Consulta'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pastaVermelhaModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPastaVermelhaModal(prev => ({ ...prev, open: false }))}>
+                    <div className="modal modal-md">
+                        <div className="modal-header">
+                            <div className="modal-title">Pasta Vermelha (Não Fecharam)</div>
+                            <button className="modal-close" onClick={() => setPastaVermelhaModal(prev => ({ ...prev, open: false }))}>
+                                <i className="fa-solid fa-xmark" />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            {pastaVermelhaModal.loading ? (
+                                <div className="loading"><div className="spinner" /></div>
+                            ) : pastaVermelhaModal.leads.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum orçamento pendente nesta etapa.</div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Nome</th>
+                                                <th>Data da Consulta</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {pastaVermelhaModal.leads.map(lead => (
+                                                <tr key={lead.id}>
+                                                    <td><strong>{lead.patient_name || lead.name}</strong></td>
+                                                    <td>{lead.scheduled_at ? format(parseISO(lead.scheduled_at), 'dd/MM/yyyy') : '-'}</td>
+                                                    <td><span className="badge badge-warning">Pasta Vermelha</span></td>
                                                 </tr>
                                             ))}
                                         </tbody>
