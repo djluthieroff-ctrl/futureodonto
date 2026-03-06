@@ -364,7 +364,7 @@ export default function Dashboard() {
     }, [currentDate])
 
     const handleOpenPastaVermelha = useCallback(async () => {
-        setPastaVermelhaModal({ open: true, leads: [], loading: true })
+        setPVermelhaModal({ open: true, leads: [], loading: true })
         try {
             const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
             const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
@@ -396,7 +396,7 @@ export default function Dashboard() {
                 patientsData?.forEach((p) => { pacienteMap[p.id] = p.name })
             }
 
-            setPastaVermelhaModal({
+            setPVermelhaModal({
                 open: true,
                 loading: false,
                 leads: pastaVermelhaLeads.map(l => ({
@@ -406,7 +406,7 @@ export default function Dashboard() {
             })
         } catch (error) {
             console.error('Erro ao abrir pasta vermelha:', error)
-            setPastaVermelhaModal({ open: false, leads: [], loading: false })
+            setPVermelhaModal({ open: false, leads: [], loading: false })
         }
     }, [currentDate])
 
