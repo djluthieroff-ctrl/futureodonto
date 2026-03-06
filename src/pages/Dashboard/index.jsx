@@ -133,15 +133,12 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [currentDate, setCurrentDate] = useState(new Date())
 
-    const periodo = React.useMemo(() => ({
-        inicio: format(startOfMonth(currentDate), 'yyyy-MM-dd'),
-        fim: format(endOfMonth(currentDate), 'yyyy-MM-dd'),
-    }), [currentDate])
-
-
     const loadDashboard = useCallback(async () => {
         setLoading(true)
         try {
+            const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
+            const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
+
             const today = format(new Date(), 'yyyy-MM-dd')
             const mm = format(currentDate, 'MM')
             const prox72h = format(addDays(new Date(), 3), 'yyyy-MM-dd')
@@ -149,9 +146,6 @@ export default function Dashboard() {
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
             const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
             const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
-
-            const inicioMes = periodo.inicio
-            const fimMes = periodo.fim
 
             // Usamos Promise.allSettled para evitar que um erro em uma tabela trave o dashboard inteiro
             const results = await Promise.allSettled([
@@ -228,30 +222,31 @@ export default function Dashboard() {
             })
         } catch (e) {
             console.error('Erro ao carregar dashboard:', e)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
-    }, [currentDate, periodo])
+    }, [currentDate])
 
     const handleOpenEtapaDetalhe = useCallback(async (etapa) => {
         if (!etapa?.key) return
 
         setFunilDetalheModal({ open: true, etapa, leads: [], loading: true })
         try {
-            let leadsData = []
+            const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
+            const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
 
             const { data, error } = await supabase
                 .from('leads')
                 .select('*')
                 .or(`etapa.eq.${etapa.key},status.eq.${etapa.key}`)
-                .gte('created_at', periodo.inicio)
-                .lte('created_at', `${periodo.fim}T23:59:59`)
+                .gte('created_at', inicioMes)
+                .lte('created_at', `${fimMes}T23:59:59`)
                 .order('created_at', { ascending: false })
 
             if (error) throw error
-            leadsData = data || []
+            const leadsData = data || []
 
-            const leads = leadsData
-            const pacienteIds = [...new Set(leads.map((l) => l.paciente_id).filter(Boolean))]
+            const pacienteIds = [...new Set(leadsData.map((l) => l.paciente_id).filter(Boolean))]
             let pacienteMap = {}
 
             if (pacienteIds.length > 0) {
@@ -268,7 +263,7 @@ export default function Dashboard() {
                 open: true,
                 etapa,
                 loading: false,
-                leads: leads.map((lead) => ({
+                leads: leadsData.map((lead) => ({
                     ...lead,
                     convertido_em_paciente: Boolean(lead.convertido_em_paciente || lead.paciente_id),
                     patient_name: pacienteMap[lead.paciente_id] || null,
@@ -278,7 +273,7 @@ export default function Dashboard() {
             console.error('Erro ao carregar detalhe da etapa do funil:', error)
             setFunilDetalheModal({ open: true, etapa, leads: [], loading: false })
         }
-    }, [periodo])
+    }, [currentDate])
 
     useEffect(() => {
         loadDashboard()
@@ -409,7 +404,7 @@ export default function Dashboard() {
                                         Funil de vendas: Leads ate aprovacao de orcamento
                                     </div>
                                     <div className="card-subtitle">
-                                        Periodo: {format(new Date(periodo.inicio), 'dd/MM/yyyy')} - {format(new Date(periodo.fim), 'dd/MM/yyyy')}
+                                        Periodo: {format(startOfMonth(currentDate), 'dd/MM/yyyy')} - {format(endOfMonth(currentDate), 'dd/MM/yyyy')}
                                     </div>
                                 </div>
                                 <button className="btn btn-sm btn-secondary">

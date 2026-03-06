@@ -26,9 +26,13 @@ export async function syncUsuarioSistema(user) {
         { id: payload.id, email: payload.email },
     ]
 
-    for (const current of tryPayloads) {
-        const { error } = await supabase.from('usuarios_sistema').upsert(current)
-        if (!error) return
+    try {
+        for (const current of tryPayloads) {
+            const { error } = await supabase.from('usuarios_sistema').upsert(current)
+            if (!error) return
+        }
+    } catch (e) {
+        // Silenciar erros de rede ou permissão para não travar o app
     }
 }
 
@@ -56,9 +60,10 @@ export async function registrarAuditoria({ acao, modulo, detalhes = null, user =
         detalhes,
     }
 
-    const { error } = await supabase.from('auditoria_logs').insert(payload)
-    if (error) {
-        // Nao quebrar fluxo principal por falha de auditoria.
-        console.warn('Falha ao registrar auditoria:', error.message)
+    try {
+        const { error } = await supabase.from('auditoria_logs').insert(payload)
+        // Ignorar falha silenciosamente para não poluir console do usuário
+    } catch (e) {
+        // Silenciar erros de rede ou permissão
     }
 }
