@@ -1,4 +1,4 @@
-export const ADMIN_EMAIL = 'gustavohenriquegolec@gmail.com'
+export const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'gustavohenriquegolec@gmail.com'
 
 export function isAdminUser(user) {
     const email = user?.email?.trim().toLowerCase()
