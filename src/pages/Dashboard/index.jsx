@@ -126,9 +126,12 @@ export default function Dashboard() {
         pacientesAusentes: 0,
         ticketsAbertos: 0,
         tratamentosAbertos: 0,
+        pastaVermelha: 0
     })
     const [funil, setFunil] = useState([])
     const [funilDetalheModal, setFunilDetalheModal] = useState({ open: false, etapa: null, leads: [], loading: false })
+    const [agendamentosSemanaModal, setAgendamentosSemanaModal] = useState({ open: false, agendamentos: [], loading: false })
+    const [pastaVermelhaModal, setPastaVermelhaModal] = useState({ open: false, leads: [], loading: false })
     const [parcelas, setParcelas] = useState([])
     const [loading, setLoading] = useState(true)
     const [currentDate, setCurrentDate] = useState(new Date())
