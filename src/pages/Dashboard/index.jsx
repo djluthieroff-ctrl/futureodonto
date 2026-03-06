@@ -147,9 +147,15 @@ export default function Dashboard() {
             const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
             const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
-            // Usamos Promise.allSettled para evitar que um erro em uma tabela trave o dashboard inteiro
+            // Buscamos leads criados NO MÊS ou agendados NO MÊS
+            // Isso garante que leads migrados em Março (created_at) mas agendados para Fevereiro (scheduled_at)
+            // apareçam no mês correto.
             const results = await Promise.allSettled([
-                supabase.from('leads').select('*').gte('created_at', inicioMes).lte('created_at', `${fimMes}T23:59:59`),
+                supabase
+                    .from('leads')
+                    .select('*')
+                    .or(`created_at.gte.${inicioMes},scheduled_at.gte.${inicioMes}`)
+                    .or(`created_at.lte.${fimMes}T23:59:59,scheduled_at.lte.${fimMes}T23:59:59`),
                 supabase
                     .from('agendamentos')
                     .select('id', { count: 'exact', head: true })
@@ -197,25 +203,32 @@ export default function Dashboard() {
             const etapasLabels = ['Leads', 'Consulta agendada', 'Faltaram ou desmarcaram', 'Atendidos', 'Orcamento criado', 'Orcamento aprovado', 'Orcamento perdido']
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
-            const leadsData = leadsRes.data || []
-            const totalLeads = leadsData.length
+            const rawLeads = leadsRes.data || []
 
-            const contagem = {}
-            etapas.forEach((e) => {
-                contagem[e] = 0
-            })
-            leadsData?.forEach((l) => {
-                const etapaLead = l.etapa || l.status || 'lead'
-                if (contagem[etapaLead] !== undefined) contagem[etapaLead] += 1
-            })
+            // Filtragem e Contagem baseada no período selecionado
+            const leadsNoPeriodo = rawLeads.filter(l => l.created_at?.startsWith(inicioMes.slice(0, 7)))
+            const agendadosNoPeriodo = rawLeads.filter(l => l.scheduled_at?.startsWith(inicioMes.slice(0, 7)))
+            const atendidosNoPeriodo = agendadosNoPeriodo.filter(l => l.attended === true || l.etapa === 'atendido')
+            const aprovadosNoPeriodo = agendadosNoPeriodo.filter(l => l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado')
+            const faltaramNoPeriodo = agendadosNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
 
-            // Ajustamos o funil para que a primeira etapa seja o TOTAL de leads
-            const funnelItems = etapas.map((e, i) => {
-                const count = e === 'lead' ? totalLeads : contagem[e]
-                return { key: e, label: etapasLabels[i], count, color: etapasCores[i] }
-            })
+            const funnelData = {
+                lead: leadsNoPeriodo.length,
+                consulta_agendada: agendadosNoPeriodo.length,
+                faltou_desmarcaram: faltaramNoPeriodo.length,
+                atendido: atendidosNoPeriodo.length,
+                orcamento_criado: atendidosNoPeriodo.length, // Regra: Quem foi atendido teve orçamento criado
+                orcamento_aprovado: aprovadosNoPeriodo.length,
+                orcamento_perdido: Math.max(0, atendidosNoPeriodo.length - aprovadosNoPeriodo.length) // Regra: Quem compareceu mas não comprou
+            }
 
-            setFunil(funnelItems)
+            setFunil(etapas.map((e, i) => ({
+                key: e,
+                label: etapasLabels[i],
+                count: funnelData[e],
+                color: etapasCores[i]
+            })))
+
             setParcelas(parcelasData)
             setMetrics({
                 aniversariantes,
@@ -241,17 +254,32 @@ export default function Dashboard() {
         try {
             const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
             const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
+            const prefix = inicioMes.slice(0, 7)
 
             const { data, error } = await supabase
                 .from('leads')
                 .select('*')
-                .or(`etapa.eq.${etapa.key},status.eq.${etapa.key}`)
-                .gte('created_at', inicioMes)
-                .lte('created_at', `${fimMes}T23:59:59`)
+                .or(`created_at.gte.${inicioMes},scheduled_at.gte.${inicioMes}`)
+                .or(`created_at.lte.${fimMes}T23:59:59,scheduled_at.lte.${fimMes}T23:59:59`)
                 .order('created_at', { ascending: false })
 
             if (error) throw error
-            const leadsData = data || []
+            let leadsData = data || []
+
+            // Aplicamos o mesmo filtro lógico do funil
+            if (etapa.key === 'lead') {
+                leadsData = leadsData.filter(l => l.created_at?.startsWith(prefix))
+            } else if (etapa.key === 'orcamento_perdido') {
+                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido') && l.sale_status !== 'sold' && l.etapa !== 'orcamento_aprovado')
+            } else if (etapa.key === 'orcamento_criado') {
+                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido'))
+            } else if (etapa.key === 'orcamento_aprovado') {
+                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado'))
+            } else if (etapa.key === 'atendido') {
+                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido'))
+            } else {
+                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix))
+            }
 
             const pacienteIds = [...new Set(leadsData.map((l) => l.paciente_id).filter(Boolean))]
             let pacienteMap = {}
