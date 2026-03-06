@@ -133,10 +133,10 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [currentDate, setCurrentDate] = useState(new Date())
 
-    const periodo = {
+    const periodo = React.useMemo(() => ({
         inicio: format(startOfMonth(currentDate), 'yyyy-MM-dd'),
         fim: format(endOfMonth(currentDate), 'yyyy-MM-dd'),
-    }
+    }), [currentDate])
 
 
     const loadDashboard = useCallback(async () => {
@@ -199,7 +199,7 @@ export default function Dashboard() {
                 }))
             }
 
-            const etapas = ['lead', 'consulta_agendada', 'faltou_desmarcou', 'atendido', 'orcamento_criado', 'orcamento_aprovado', 'orcamento_perdido']
+            const etapas = ['lead', 'consulta_agendada', 'faltou_desmarcaram', 'atendido', 'orcamento_criado', 'orcamento_aprovado', 'orcamento_perdido']
             const etapasLabels = ['Leads', 'Consulta agendada', 'Faltaram ou desmarcaram', 'Atendidos', 'Orcamento criado', 'Orcamento aprovado', 'Orcamento perdido']
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
@@ -239,26 +239,16 @@ export default function Dashboard() {
         try {
             let leadsData = []
 
-            const etapaRes = await supabase
+            const { data, error } = await supabase
                 .from('leads')
                 .select('*')
-                .eq('etapa', etapa.key)
+                .or(`etapa.eq.${etapa.key},status.eq.${etapa.key}`)
+                .gte('created_at', periodo.inicio)
+                .lte('created_at', `${periodo.fim}T23:59:59`)
                 .order('created_at', { ascending: false })
 
-            if (!etapaRes.error) {
-                leadsData = etapaRes.data || []
-            }
-
-            if (etapaRes.error || leadsData.length === 0) {
-                const statusRes = await supabase
-                    .from('leads')
-                    .select('*')
-                    .eq('status', etapa.key)
-                    .order('created_at', { ascending: false })
-
-                if (statusRes.error) throw statusRes.error
-                leadsData = statusRes.data || []
-            }
+            if (error) throw error
+            leadsData = data || []
 
             const leads = leadsData
             const pacienteIds = [...new Set(leads.map((l) => l.paciente_id).filter(Boolean))]
@@ -269,9 +259,9 @@ export default function Dashboard() {
                     .from('patients')
                     .select('id,name')
                     .in('id', pacienteIds)
-                    ; (patientsData || []).forEach((p) => {
-                        pacienteMap[p.id] = p.name
-                    })
+                patientsData?.forEach((p) => {
+                    pacienteMap[p.id] = p.name
+                })
             }
 
             setFunilDetalheModal({
@@ -288,13 +278,10 @@ export default function Dashboard() {
             console.error('Erro ao carregar detalhe da etapa do funil:', error)
             setFunilDetalheModal({ open: true, etapa, leads: [], loading: false })
         }
-    }, [currentDate, periodo])
+    }, [periodo])
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            loadDashboard()
-        }, 0)
-        return () => clearTimeout(timer)
+        loadDashboard()
     }, [loadDashboard])
 
     const metricCards = [
@@ -314,6 +301,49 @@ export default function Dashboard() {
             label: 'Agendamentos realizados',
             desc: 'Consultas atendidas na semana',
             period: 'Esta semana',
+        },
+        {
+            icon: 'fa-person-running',
+            iconBg: '#EF4444',
+            value: metrics.faltaramDesmarcaram,
+            label: 'Faltaram ou desmarcaram',
+            desc: 'Pacientes nao reagendados',
+            period: 'Ultimos 30 dias',
+            onClick: () => navigate('/crm/kpis/faltaram_desmarcaram'),
+        },
+        {
+            icon: 'fa-calendar-xmark',
+            iconBg: '#F97316',
+            value: metrics.naoConfirmados,
+            label: 'Agendamentos nao confirmados',
+            desc: 'Seu custo hora. Reduza as faltas.',
+            period: 'Proximas 72 horas',
+            onClick: () => navigate('/crm/kpis/nao_confirmados'),
+        },
+        {
+            icon: 'fa-file-invoice-dollar',
+            iconBg: '#06B6D4',
+            value: metrics.orcamentosNaoAprovados,
+            label: 'Orcamentos nao aprovados',
+            desc: 'Em orcamentos nao aprovados',
+            period: 'Ultimos 30 dias',
+        },
+        {
+            icon: 'fa-user-clock',
+            iconBg: '#6366F1',
+            value: metrics.pacientesAusentes,
+            label: 'Pacientes ausentes ha 6 meses',
+            desc: 'Receita gerada por esses pacientes',
+            period: 'Ultimos 2 anos',
+            onClick: () => navigate('/crm/kpis/nao_agendaram'),
+        },
+        {
+            icon: 'fa-ticket',
+            iconBg: '#EC4899',
+            value: metrics.ticketsAbertos,
+            label: 'Pacientes com maiores tickets',
+            desc: 'Receita gerada por estes pacientes',
+            period: 'Ultimos 12 meses',
         },
         {
             icon: 'fa-tooth',
