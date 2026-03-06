@@ -204,13 +204,18 @@ export default function Dashboard() {
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
             const rawLeads = leadsRes.data || []
+            const prefix = inicioMes.slice(0, 7)
 
-            // Filtragem e Contagem baseada no período selecionado
-            const leadsNoPeriodo = rawLeads.filter(l => l.created_at?.startsWith(inicioMes.slice(0, 7)))
-            const agendadosNoPeriodo = rawLeads.filter(l => l.scheduled_at?.startsWith(inicioMes.slice(0, 7)))
-            const atendidosNoPeriodo = agendadosNoPeriodo.filter(l => l.attended === true || l.etapa === 'atendido')
-            const aprovadosNoPeriodo = agendadosNoPeriodo.filter(l => l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado')
-            const faltaramNoPeriodo = agendadosNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
+            // Nova Lógica: A data de referência é scheduled_at se existir, caso contrário created_at
+            const leadsNoPeriodo = rawLeads.filter(l => {
+                const refDate = (l.scheduled_at || l.created_at)
+                return refDate?.startsWith(prefix)
+            })
+
+            const agendadosNoPeriodo = leadsNoPeriodo.filter(l => l.scheduled_at)
+            const atendidosNoPeriodo = leadsNoPeriodo.filter(l => l.attended === true || l.etapa === 'atendido')
+            const aprovadosNoPeriodo = leadsNoPeriodo.filter(l => l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado')
+            const faltaramNoPeriodo = leadsNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
 
             const funnelData = {
                 lead: leadsNoPeriodo.length,
@@ -264,21 +269,31 @@ export default function Dashboard() {
                 .order('created_at', { ascending: false })
 
             if (error) throw error
-            let leadsData = data || []
+            let rawData = data || []
 
-            // Aplicamos o mesmo filtro lógico do funil
+            // Filtro de data comum
+            const leadsNoPeriodo = rawData.filter(l => {
+                const refDate = (l.scheduled_at || l.created_at)
+                return refDate?.startsWith(prefix)
+            })
+
+            let leadsData = []
+
+            // Aplicamos o filtro de etapa específico
             if (etapa.key === 'lead') {
-                leadsData = leadsData.filter(l => l.created_at?.startsWith(prefix))
+                leadsData = leadsNoPeriodo
             } else if (etapa.key === 'orcamento_perdido') {
-                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido') && l.sale_status !== 'sold' && l.etapa !== 'orcamento_aprovado')
-            } else if (etapa.key === 'orcamento_criado') {
-                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido'))
+                leadsData = leadsNoPeriodo.filter(l => (l.attended === true || l.etapa === 'atendido') && l.sale_status !== 'sold' && l.etapa !== 'orcamento_aprovado')
+            } else if (etapa.key === 'orcamento_criado' || etapa.key === 'atendido') {
+                leadsData = leadsNoPeriodo.filter(l => (l.attended === true || l.etapa === 'atendido'))
             } else if (etapa.key === 'orcamento_aprovado') {
-                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado'))
-            } else if (etapa.key === 'atendido') {
-                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix) && (l.attended === true || l.etapa === 'atendido'))
+                leadsData = leadsNoPeriodo.filter(l => (l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado'))
+            } else if (etapa.key === 'consulta_agendada') {
+                leadsData = leadsNoPeriodo.filter(l => l.scheduled_at)
+            } else if (etapa.key === 'faltou_desmarcaram') {
+                leadsData = leadsNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
             } else {
-                leadsData = leadsData.filter(l => l.scheduled_at?.startsWith(prefix))
+                leadsData = leadsNoPeriodo
             }
 
             const pacienteIds = [...new Set(leadsData.map((l) => l.paciente_id).filter(Boolean))]
