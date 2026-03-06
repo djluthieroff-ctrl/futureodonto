@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { format, subMonths, startOfMonth, subDays, addDays, startOfWeek, endOfWeek } from 'date-fns'
+import { format, subMonths, startOfMonth, subDays, addDays, startOfWeek, endOfWeek, addMonths, endOfMonth } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 function FunnelChart({ etapas, onSelectEtapa }) {
     if (!etapas || etapas.length === 0) return null
@@ -130,25 +131,31 @@ export default function Dashboard() {
     const [funilDetalheModal, setFunilDetalheModal] = useState({ open: false, etapa: null, leads: [], loading: false })
     const [parcelas, setParcelas] = useState([])
     const [loading, setLoading] = useState(true)
-    const [periodo] = useState({
-        inicio: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-        fim: format(new Date(), 'yyyy-MM-dd'),
-    })
+    const [currentDate, setCurrentDate] = useState(new Date())
+
+    const periodo = {
+        inicio: format(startOfMonth(currentDate), 'yyyy-MM-dd'),
+        fim: format(endOfMonth(currentDate), 'yyyy-MM-dd'),
+    }
+
 
     const loadDashboard = useCallback(async () => {
         setLoading(true)
         try {
             const today = format(new Date(), 'yyyy-MM-dd')
-            const mm = format(new Date(), 'MM')
+            const mm = format(currentDate, 'MM')
             const prox72h = format(addDays(new Date(), 3), 'yyyy-MM-dd')
             const ha6meses = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
-            const inicioSemana = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
-            const fimSemana = format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+            const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+            const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+
+            const inicioMes = periodo.inicio
+            const fimMes = periodo.fim
 
             // Usamos Promise.allSettled para evitar que um erro em uma tabela trave o dashboard inteiro
             const results = await Promise.allSettled([
-                supabase.from('leads').select('*'),
+                supabase.from('leads').select('*').gte('created_at', inicioMes).lte('created_at', `${fimMes}T23:59:59`),
                 supabase
                     .from('agendamentos')
                     .select('id', { count: 'exact', head: true })
@@ -223,7 +230,7 @@ export default function Dashboard() {
             console.error('Erro ao carregar dashboard:', e)
         }
         setLoading(false)
-    }, [])
+    }, [currentDate, periodo])
 
     const handleOpenEtapaDetalhe = useCallback(async (etapa) => {
         if (!etapa?.key) return
@@ -262,9 +269,9 @@ export default function Dashboard() {
                     .from('patients')
                     .select('id,name')
                     .in('id', pacienteIds)
-                ;(patientsData || []).forEach((p) => {
-                    pacienteMap[p.id] = p.name
-                })
+                    ; (patientsData || []).forEach((p) => {
+                        pacienteMap[p.id] = p.name
+                    })
             }
 
             setFunilDetalheModal({
@@ -281,7 +288,7 @@ export default function Dashboard() {
             console.error('Erro ao carregar detalhe da etapa do funil:', error)
             setFunilDetalheModal({ open: true, etapa, leads: [], loading: false })
         }
-    }, [])
+    }, [currentDate, periodo])
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -309,49 +316,6 @@ export default function Dashboard() {
             period: 'Esta semana',
         },
         {
-            icon: 'fa-person-running',
-            iconBg: '#EF4444',
-            value: metrics.faltaramDesmarcaram,
-            label: 'Faltaram ou desmarcaram',
-            desc: 'Pacientes nao reagendados',
-            period: 'Ultimos 30 dias',
-            onClick: () => navigate('/crm/kpis/faltaram_desmarcaram'),
-        },
-        {
-            icon: 'fa-calendar-xmark',
-            iconBg: '#F97316',
-            value: metrics.naoConfirmados,
-            label: 'Agendamentos nao confirmados',
-            desc: 'Seu custo hora. Reduza as faltas.',
-            period: 'Proximas 72 horas',
-            onClick: () => navigate('/crm/kpis/nao_confirmados'),
-        },
-        {
-            icon: 'fa-file-invoice-dollar',
-            iconBg: '#06B6D4',
-            value: metrics.orcamentosNaoAprovados,
-            label: 'Orcamentos nao aprovados',
-            desc: 'Em orcamentos nao aprovados',
-            period: 'Ultimos 30 dias',
-        },
-        {
-            icon: 'fa-user-clock',
-            iconBg: '#6366F1',
-            value: metrics.pacientesAusentes,
-            label: 'Pacientes ausentes ha 6 meses',
-            desc: 'Receita gerada por esses pacientes',
-            period: 'Ultimos 2 anos',
-            onClick: () => navigate('/crm/kpis/nao_agendaram'),
-        },
-        {
-            icon: 'fa-ticket',
-            iconBg: '#EC4899',
-            value: metrics.ticketsAbertos,
-            label: 'Pacientes com maiores tickets',
-            desc: 'Receita gerada por estes pacientes',
-            period: 'Ultimos 12 meses',
-        },
-        {
             icon: 'fa-tooth',
             iconBg: '#10B981',
             value: metrics.tratamentosAbertos,
@@ -377,10 +341,23 @@ export default function Dashboard() {
                     justifyContent: 'space-between',
                 }}
             >
-                <span>
-                    <i className="fa-solid fa-circle-info" style={{ marginRight: 8 }} />
-                    Dados do CRM atualizados em tempo real com o Supabase
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span>
+                        <i className="fa-solid fa-circle-info" style={{ marginRight: 8 }} />
+                        Dados do CRM atualizados em tempo real com o Supabase
+                    </span>
+                    <div className="month-selector" style={{ display: 'flex', alignItems: 'center', gap: 15, background: 'white', padding: '4px 12px', borderRadius: 20, border: '1px solid #C7D2FE' }}>
+                        <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary)' }}>
+                            <i className="fa-solid fa-chevron-left" />
+                        </button>
+                        <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'capitalize', minWidth: 100, textAlign: 'center' }}>
+                            {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+                        </span>
+                        <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary)' }}>
+                            <i className="fa-solid fa-chevron-right" />
+                        </button>
+                    </div>
+                </div>
                 <button className="btn btn-sm btn-primary" onClick={loadDashboard}>
                     <i className="fa-solid fa-rotate" />
                     Atualizar
