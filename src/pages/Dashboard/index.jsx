@@ -212,10 +212,16 @@ export default function Dashboard() {
                 return refDate?.startsWith(prefix)
             })
 
+            const todayIso = format(new Date(), 'yyyy-MM-dd')
             const agendadosNoPeriodo = leadsNoPeriodo.filter(l => l.scheduled_at)
             const atendidosNoPeriodo = leadsNoPeriodo.filter(l => l.attended === true || l.etapa === 'atendido')
             const aprovadosNoPeriodo = leadsNoPeriodo.filter(l => l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado')
-            const faltaramNoPeriodo = leadsNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
+
+            // Faltas: Marcados manualmente OU (agendamentos passados E não atendidos)
+            const faltaramNoPeriodo = leadsNoPeriodo.filter(l =>
+                l.etapa === 'faltou_desmarcaram' ||
+                (l.scheduled_at && l.scheduled_at < todayIso && l.attended !== true)
+            )
 
             const funnelData = {
                 lead: leadsNoPeriodo.length,
@@ -279,6 +285,8 @@ export default function Dashboard() {
 
             let leadsData = []
 
+            const todayIso = format(new Date(), 'yyyy-MM-dd')
+
             // Aplicamos o filtro de etapa específico
             if (etapa.key === 'lead') {
                 leadsData = leadsNoPeriodo
@@ -291,7 +299,10 @@ export default function Dashboard() {
             } else if (etapa.key === 'consulta_agendada') {
                 leadsData = leadsNoPeriodo.filter(l => l.scheduled_at)
             } else if (etapa.key === 'faltou_desmarcaram') {
-                leadsData = leadsNoPeriodo.filter(l => l.etapa === 'faltou_desmarcaram')
+                leadsData = leadsNoPeriodo.filter(l =>
+                    l.etapa === 'faltou_desmarcaram' ||
+                    (l.scheduled_at && l.scheduled_at < todayIso && l.attended !== true)
+                )
             } else {
                 leadsData = leadsNoPeriodo
             }

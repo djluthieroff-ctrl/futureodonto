@@ -4,7 +4,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import ptBrLocale from '@fullcalendar/core/locales/pt-br'
 import { supabase } from '../../lib/supabase'
-import { format, addDays, isSameDay, parseISO } from 'date-fns'
+import { format, addDays, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ModalAgendamento from './ModalAgendamento'
 import { useToast } from '../../components/ui/Toast'
@@ -203,7 +203,13 @@ export default function Agenda({ defaultView = 'calendar' }) {
                         <button className="nav-btn-today" onClick={handleToday}>Hoje</button>
                         <button className="nav-btn" onClick={handleNext}><i className="fa-solid fa-chevron-right" /></button>
                     </div>
-                    <span className="header-date-range" style={{ textTransform: 'capitalize' }}>{format(currentDate, 'EEEE, d \'de\' MMMM', { locale: ptBR })}</span>
+                    <span className="header-date-range" style={{ textTransform: 'capitalize' }}>
+                        {viewMode === 'timeGridWeek' ? (
+                            `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'd')} a ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'd \'de\' MMMM', { locale: ptBR })}`
+                        ) : (
+                            format(currentDate, 'EEEE, d \'de\' MMMM', { locale: ptBR })
+                        )}
+                    </span>
                 </div>
 
                 <div className="header-right">
