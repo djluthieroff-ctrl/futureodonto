@@ -117,15 +117,15 @@ export default function Leads() {
 
         const mapRows = (rows) => {
             const next = {}
-            ;(rows || []).forEach((row) => {
-                const isActive = typeof row?.is_active_patient === 'boolean'
-                    ? row.is_active_patient
-                    : normalizeText(row?.status) === 'ativo'
-                next[row.id] = {
-                    is_active_patient: Boolean(isActive),
-                    status: row?.status || null
-                }
-            })
+                ; (rows || []).forEach((row) => {
+                    const isActive = typeof row?.is_active_patient === 'boolean'
+                        ? row.is_active_patient
+                        : normalizeText(row?.status) === 'ativo'
+                    next[row.id] = {
+                        is_active_patient: Boolean(isActive),
+                        status: row?.status || null
+                    }
+                })
             setPatientMetaMap(next)
         }
 
@@ -512,6 +512,29 @@ export default function Leads() {
         }
     }
 
+    const desconverterEmPaciente = async (lead) => {
+        if (!confirm(`Desconverter o lead "${lead.name}" de paciente? Isso removerá a vinculação com o paciente.`)) return
+        try {
+            await updateLeadWithFallback(lead.id, {
+                etapa: 'lead',
+                convertido_em_paciente: false,
+                paciente_id: null
+            })
+
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead desconvertido de paciente',
+                detalhes: `Lead: ${lead.name}`
+            })
+
+            toast.success('Lead desconvertido de paciente com sucesso')
+            await loadLeads()
+        } catch (e) {
+            console.error('Erro ao desconverter lead:', e)
+            toast.error(`Erro ao desconverter lead: ${e.message || 'falha inesperada'}`)
+        }
+    }
+
     const enrichedLeads = useMemo(() => {
         return (leads || []).map((lead) => {
             const patientMeta = lead?.paciente_id ? patientMetaMap[lead.paciente_id] : null
@@ -654,6 +677,16 @@ export default function Leads() {
                                                         title="Converter em paciente"
                                                     >
                                                         <i className="fa-solid fa-user-plus" /> Converter
+                                                    </button>
+                                                )}
+
+                                                {lead.convertido_em_paciente && (
+                                                    <button
+                                                        className="btn btn-sm btn-warning"
+                                                        onClick={() => desconverterEmPaciente(lead)}
+                                                        title="Desconverter de paciente"
+                                                    >
+                                                        <i className="fa-solid fa-user-minus" /> Desconverter
                                                     </button>
                                                 )}
 
