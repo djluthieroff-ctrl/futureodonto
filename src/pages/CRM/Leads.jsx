@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { format } from 'date-fns'
+import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/ui/Toast'
 import { registrarAuditoria } from '../../lib/auditoria'
 import { buildEndDateFromStart, DEFAULT_APPOINTMENT_MINUTES, findAgendamentoConflict } from '../../lib/agendamento'
+import '../../styles/leads-modern.css'
 
 const LEAD_STAGE_OPTIONS = [
     { value: 'lead', label: 'Novo Lead' },
@@ -101,6 +103,8 @@ export default function Leads() {
     const [stageFilter, setStageFilter] = useState('all')
     const [sectionFilter, setSectionFilter] = useState('all')
     const [onlyUnscheduled, setOnlyUnscheduled] = useState(false)
+    const [viewMode, setViewMode] = useState('table')
+    const [tableDensity, setTableDensity] = useState('comfortable')
 
     const setTransientStatus = useCallback((text) => {
         setStatus(text)
@@ -566,17 +570,70 @@ export default function Leads() {
     const sortedLeadsRedes = useMemo(() => sortLeads(leadsRedes, sortOrder), [leadsRedes, sortOrder])
     const sortedLeadsUltimaGestao = useMemo(() => sortLeads(leadsUltimaGestao, sortOrder), [leadsUltimaGestao, sortOrder])
 
+    const groupedSections = useMemo(() => ([
+        { id: 'online', title: 'Agendamentos Online', leads: sortedLeadsOnline, isOnline: true },
+        { id: 'social', title: 'Leads de Redes Sociais', leads: sortedLeadsRedes, isOnline: false },
+        { id: 'reactivation', title: 'Pacientes da Ultima Gestao', leads: sortedLeadsUltimaGestao, isOnline: false }
+    ]), [sortedLeadsOnline, sortedLeadsRedes, sortedLeadsUltimaGestao])
+
     const kpis = useMemo(() => {
         const total = enrichedLeads.length
         const novos = enrichedLeads.filter((lead) => lead.etapaAtual === 'lead').length
         const agendados = enrichedLeads.filter((lead) => lead.etapaAtual === 'consulta_agendada').length
         const convertidos = enrichedLeads.filter((lead) => lead.convertido_em_paciente).length
 
-        return { total, novos, agendados, convertidos }
+        const now = Date.now()
+        const range = 30 * 24 * 60 * 60 * 1000
+        const recent = enrichedLeads.filter((lead) => {
+            const created = new Date(lead.created_at).getTime()
+            return !Number.isNaN(created) && created >= now - range
+        }).length
+        const previous = enrichedLeads.filter((lead) => {
+            const created = new Date(lead.created_at).getTime()
+            return !Number.isNaN(created) && created < now - range && created >= now - (range * 2)
+        }).length
+        const trend = previous > 0 ? Math.round(((recent - previous) / previous) * 100) : (recent > 0 ? 100 : 0)
+
+        return { total, novos, agendados, convertidos, trend, recent }
     }, [enrichedLeads])
 
+    const stageDistribution = useMemo(() => (
+        LEAD_STAGE_OPTIONS.map((stage) => ({
+            name: stage.label,
+            value: enrichedLeads.filter((lead) => lead.etapaAtual === stage.value).length
+        }))
+    ), [enrichedLeads])
+
+    const activeFilterChips = useMemo(() => {
+        const chips = []
+        if (searchTerm) chips.push({ key: 'search', label: `Busca: ${searchTerm}` })
+        if (sectionFilter !== 'all') {
+            const labels = {
+                online: 'Secao: Agendamentos online',
+                social: 'Secao: Redes sociais',
+                reactivation: 'Secao: Ultima gestao'
+            }
+            chips.push({ key: 'section', label: labels[sectionFilter] || 'Secao' })
+        }
+        if (stageFilter !== 'all') {
+            const stageLabel = LEAD_STAGE_OPTIONS.find((item) => item.value === stageFilter)?.label || stageFilter
+            chips.push({ key: 'stage', label: `Etapa: ${stageLabel}` })
+        }
+        if (sortOrder !== 'created_desc') chips.push({ key: 'sort', label: `Ordenacao: ${sortOrder === 'name_asc' ? 'Nome A-Z' : 'Nome Z-A'}` })
+        if (onlyUnscheduled) chips.push({ key: 'unscheduled', label: 'Sem consulta agendada' })
+        return chips
+    }, [searchTerm, sectionFilter, stageFilter, sortOrder, onlyUnscheduled])
+
+    const clearAllFilters = () => {
+        setSearchTerm('')
+        setSectionFilter('all')
+        setStageFilter('all')
+        setSortOrder('created_desc')
+        setOnlyUnscheduled(false)
+    }
+
     const LeadTable = ({ leads: rows, title, isOnline }) => (
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card lead-section-card">
             <div className="card-header">
                 <div>
                     <div className="card-title">{title}</div>
@@ -584,7 +641,7 @@ export default function Leads() {
                 </div>
             </div>
 
-            <div className="table-wrapper">
+            <div className={`table-wrapper ${tableDensity === 'compact' ? 'leads-table-compact' : 'leads-table-comfortable'}`}>
                 <table>
                     <thead>
                         <tr>
@@ -721,36 +778,132 @@ export default function Leads() {
         </div>
     )
 
+    const KanbanBoard = () => (
+        <div className="kanban-board">
+            {LEAD_STAGE_OPTIONS.map((stage) => {
+                const rows = filteredLeads.filter((lead) => lead.etapaAtual === stage.value)
+                return (
+                    <div className="kanban-column" key={stage.value}>
+                        <div className="kanban-column-header">
+                            <strong>{stage.label}</strong>
+                            <span>{rows.length}</span>
+                        </div>
+                        <div className="kanban-column-body">
+                            {rows.length === 0 ? (
+                                <div className="kanban-empty">Sem leads</div>
+                            ) : rows.map((lead) => (
+                                <div className="kanban-card" key={lead.id}>
+                                    <div className="kanban-name">{lead.name || 'Sem nome'}</div>
+                                    <div className="kanban-meta">{lead.phone || 'Sem telefone'}</div>
+                                    <div className="kanban-meta">{lead.email || 'Sem e-mail'}</div>
+                                    <select
+                                        className="form-control"
+                                        value={lead.etapaAtual}
+                                        onChange={(e) => handleEtapaChange(lead, e.target.value)}
+                                    >
+                                        {LEAD_STAGE_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                    <div className="kanban-actions">
+                                        <button className="btn btn-sm btn-secondary" onClick={() => abrirModalAgendamento(lead)}>Agendar</button>
+                                        <button className="btn btn-sm btn-danger" onClick={() => handleDeleteLead(lead.id)}>Remover</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )
+            })}
+        </div>
+    )
+
     return (
-        <div className="leads-container">
-            <div className="page-header">
+        <div className="leads-container leads-modern-page">
+            <div className="page-header leads-modern-hero">
                 <div>
                     <h1 className="page-title">Gestao de Leads</h1>
                     <div className="page-subtitle">Central comercial com cadastro, qualificacao e agendamento de contatos</div>
                 </div>
-                <div className="page-actions">
-                    <button className="btn btn-secondary" onClick={() => setModalImport(true)} style={{ marginRight: 8 }}>
-                        <i className="fa-solid fa-file-import" /> Importar JSON
+                <div className="page-actions leads-modern-actions">
+                    <button className="btn btn-secondary" onClick={() => setModalImport(true)}>
+                        Importar JSON
                     </button>
-                    <button className="btn btn-primary" onClick={() => setModalNovoLead(true)} style={{ marginRight: 8 }}>
-                        <i className="fa-solid fa-plus" /> Novo Lead
+                    <button className="btn btn-primary" onClick={() => setModalNovoLead(true)}>
+                        Novo Lead
                     </button>
                     <button className="btn btn-secondary" onClick={loadLeads}>
-                        <i className="fa-solid fa-rotate" /> Atualizar
+                        Atualizar
                     </button>
                 </div>
             </div>
 
-            <div className="cards-grid cards-grid-4" style={{ marginBottom: 16 }}>
-                <div className="card"><div className="card-body"><div className="card-subtitle">Total de contatos</div><div className="kpi-value">{kpis.total}</div></div></div>
-                <div className="card"><div className="card-body"><div className="card-subtitle">Novos leads</div><div className="kpi-value">{kpis.novos}</div></div></div>
-                <div className="card"><div className="card-body"><div className="card-subtitle">Consultas agendadas</div><div className="kpi-value">{kpis.agendados}</div></div></div>
-                <div className="card"><div className="card-body"><div className="card-subtitle">Convertidos</div><div className="kpi-value">{kpis.convertidos}</div></div></div>
+            <div className="cards-grid cards-grid-4 leads-kpi-grid">
+                <div className="card leads-kpi-card">
+                    <div className="card-body">
+                        <div className="card-subtitle">Total de contatos</div>
+                        <div className="kpi-value">{kpis.total}</div>
+                        <div className="kpi-foot">{kpis.recent} nos ultimos 30 dias</div>
+                    </div>
+                </div>
+                <div className="card leads-kpi-card">
+                    <div className="card-body">
+                        <div className="card-subtitle">Novos leads</div>
+                        <div className="kpi-value">{kpis.novos}</div>
+                        <div className={`kpi-foot ${kpis.trend >= 0 ? 'is-positive' : 'is-negative'}`}>
+                            {kpis.trend >= 0 ? '+' : ''}{kpis.trend}% vs periodo anterior
+                        </div>
+                    </div>
+                </div>
+                <div className="card leads-kpi-card">
+                    <div className="card-body">
+                        <div className="card-subtitle">Consultas agendadas</div>
+                        <div className="kpi-value">{kpis.agendados}</div>
+                        <div className="kpi-foot">Taxa: {kpis.total ? Math.round((kpis.agendados / kpis.total) * 100) : 0}%</div>
+                    </div>
+                </div>
+                <div className="card leads-kpi-card">
+                    <div className="card-body">
+                        <div className="card-subtitle">Convertidos</div>
+                        <div className="kpi-value">{kpis.convertidos}</div>
+                        <div className="kpi-foot">Conversao: {kpis.total ? Math.round((kpis.convertidos / kpis.total) * 100) : 0}%</div>
+                    </div>
+                </div>
             </div>
 
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div className="card-body">
-                    <div className="form-grid form-grid-4" style={{ alignItems: 'end' }}>
+            <div className="card leads-chart-card">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">Distribuicao por etapa</div>
+                        <div className="card-subtitle">Visao rapida do funil atual</div>
+                    </div>
+                </div>
+                <div className="leads-chart-area">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stageDistribution} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                            <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={24} />
+                            <Tooltip />
+                            <Bar dataKey="value" fill="#0ea5e9" radius={[7, 7, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="card leads-filter-card">
+                <div className="card-body leads-filter-sticky">
+                    <div className="leads-filter-top">
+                        <div className="leads-view-toggle">
+                            <button className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('table')}>Tabela</button>
+                            <button className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('kanban')}>Kanban</button>
+                        </div>
+                        <div className="leads-view-toggle">
+                            <button className={`btn btn-sm ${tableDensity === 'comfortable' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTableDensity('comfortable')}>Conforto</button>
+                            <button className={`btn btn-sm ${tableDensity === 'compact' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTableDensity('compact')}>Compacto</button>
+                        </div>
+                    </div>
+
+                    <div className="form-grid form-grid-4 leads-filter-grid" style={{ alignItems: 'end' }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Buscar contato</label>
                             <input
@@ -801,19 +954,38 @@ export default function Leads() {
                         <label htmlFor="only-unscheduled" style={{ fontSize: 13, cursor: 'pointer' }}>
                             Mostrar apenas contatos sem consulta agendada
                         </label>
+                        <button className="btn btn-sm btn-secondary" onClick={clearAllFilters} disabled={!activeFilterChips.length}>
+                            Limpar filtros
+                        </button>
                     </div>
+
+                    {activeFilterChips.length > 0 && (
+                        <div className="leads-chip-row">
+                            {activeFilterChips.map((chip) => (
+                                <span key={chip.key} className="chip leads-filter-chip">{chip.label}</span>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
             {status && <div className="alert alert-success">{status}</div>}
 
             {loading ? (
-                <div className="loading"><div className="spinner" /></div>
+                <div className="leads-skeleton-grid">
+                    <div className="leads-skeleton-item" />
+                    <div className="leads-skeleton-item" />
+                    <div className="leads-skeleton-item" />
+                </div>
             ) : (
                 <>
-                    <LeadTable leads={sortedLeadsOnline} title="Secao 1: Agendamentos Online" isOnline />
-                    <LeadTable leads={sortedLeadsRedes} title="Secao 2: Leads de Redes Sociais" isOnline={false} />
-                    <LeadTable leads={sortedLeadsUltimaGestao} title="Secao 3: Pacientes da Ultima Gestao" isOnline={false} />
+                    {viewMode === 'table' ? (
+                        groupedSections.map((section) => (
+                            <LeadTable key={section.id} leads={section.leads} title={section.title} isOnline={section.isOnline} />
+                        ))
+                    ) : (
+                        <KanbanBoard />
+                    )}
                 </>
             )}
 
