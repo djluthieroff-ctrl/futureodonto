@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import ChatInterno from '../Chat/ChatInterno'
 import ModalNovoPacienteSimples from '../Pacientes/ModalNovoPacienteSimples'
+import ModalNovoLeadSimples from '../CRM/ModalNovoLeadSimples'
 
 export default function Layout() {
     return (
@@ -17,6 +18,7 @@ export default function Layout() {
             </div>
             <ChatInterno />
             <ModalNovoPacienteSimples />
+            <ModalNovoLeadSimples />
         </div>
     )
 }

@@ -13,25 +13,49 @@ export default function Pacientes() {
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState('')
     const [modal, setModal] = useState(false)
-    const [form, setForm] = useState({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '' })
-    const [saving, setSaving] = useState(false)
-    const [totalCount, setTotalCount] = useState(0)
+    const [form, setForm] = useState({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '', is_ortodontia: false, is_protese: false, is_clinico: true })
+    const [showFilters, setShowFilters] = useState(false)
+    const [filterType, setFilterType] = useState('todos') // todos, ortodontia, protese, clinico
 
     const loadPacientes = useCallback(async () => {
         setLoading(true)
-        let q = supabase.from('patients').select('id,name,phone,email,city,status,birth_date,created_at', { count: 'exact' })
+        let q = supabase.from('patients').select('id,name,phone,email,city,status,birth_date,created_at,is_ortodontia,is_active_patient', { count: 'exact' })
         if (search) {
             q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
         }
+
+        if (activeTab === 'ortodontia' || activeTab === 'manutencao' || filterType === 'ortodontia') {
+            q = q.eq('is_ortodontia', true)
+        }
+        if (filterType === 'protese') {
+            q = q.eq('is_protese', true)
+        }
+        if (filterType === 'clinico') {
+            q = q.eq('is_clinico', true)
+        }
+
+        // Filtro padrão: apenas pacientes ativos (tratamento fechado)
+        // Se estiver buscando ou filtrando especificamente, talvez queira ver todos, 
+        // mas o pedido foi que eles "só devem vir para cá depois de fechar"
+        if (!search && filterType === 'todos') {
+            q = q.eq('is_active_patient', true)
+        }
+
         const { data, count, error } = await q.order('name')
         if (error) {
             console.error('Erro ao carregar pacientes:', error)
             toast.error('Erro ao carregar pacientes: ' + (error.message || 'Verifique a conexão.'))
         }
-        setPacientes(data || [])
+
+        let filteredData = data || []
+        if (search === 'status:leads') {
+            filteredData = (data || []).filter(p => !p.is_active_patient)
+        }
+
+        setPacientes(filteredData)
         setTotalCount(count || 0)
         setLoading(false)
-    }, [search, toast])
+    }, [search, activeTab, filterType, toast])
 
     useEffect(() => {
         const timer = setTimeout(() => { loadPacientes() }, 0)
@@ -72,7 +96,7 @@ export default function Pacientes() {
 
             setSaving(false)
             setModal(false)
-            setForm({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '' })
+            setForm({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '', is_ortodontia: false })
             loadPacientes()
             toast.success('Paciente cadastrado com sucesso!')
             await registrarAuditoria({
@@ -99,22 +123,83 @@ export default function Pacientes() {
             <div className="page-header">
                 <div>
                     <h1 className="page-title">Pacientes</h1>
-                    <div className="page-subtitle">{totalCount} pacientes cadastrados</div>
+                    <div className="page-subtitle">{totalCount} pacientes com tratamento fechado</div>
                 </div>
                 <button className="btn btn-primary" onClick={() => setModal(true)} id="btn-novo-paciente">
                     <i className="fa-solid fa-user-plus" /> Novo Paciente
                 </button>
             </div>
 
-            {/* Toolbar */}
+            {/* Tabs de Submenu */}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 0 }}>
+                <button
+                    onClick={() => setActiveTab('todos')}
+                    style={{
+                        padding: '8px 16px',
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: activeTab === 'todos' ? 'var(--primary)' : 'var(--text-muted)',
+                        borderBottom: activeTab === 'todos' ? '2px solid var(--primary)' : '2px solid transparent',
+                        fontWeight: activeTab === 'todos' ? 600 : 400,
+                        fontSize: 14
+                    }}
+                >
+                    Todos os Pacientes
+                </button>
+                <button
+                    onClick={() => setActiveTab('ortodontia')}
+                    style={{
+                        padding: '8px 16px',
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: activeTab === 'ortodontia' ? 'var(--primary)' : 'var(--text-muted)',
+                        borderBottom: activeTab === 'ortodontia' ? '2px solid var(--primary)' : '2px solid transparent',
+                        fontWeight: activeTab === 'ortodontia' ? 600 : 400,
+                        fontSize: 14
+                    }}
+                >
+                    Ortodontia
+                </button>
+                <button
+                    onClick={() => setActiveTab('manutencao')}
+                    style={{
+                        padding: '8px 16px',
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: activeTab === 'manutencao' ? 'var(--primary)' : 'var(--text-muted)',
+                        borderBottom: activeTab === 'manutencao' ? '2px solid var(--primary)' : '2px solid transparent',
+                        fontWeight: activeTab === 'manutencao' ? 600 : 400,
+                        fontSize: 14
+                    }}
+                >
+                    Manutenção do Mês
+                </button>
+            </div>
             <div className="page-toolbar">
                 <div className="search-bar">
                     <i className="fa-solid fa-magnifying-glass" style={{ color: 'var(--text-muted)' }} />
                     <input placeholder="Buscar por nome, telefone..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-                <button className="btn btn-secondary btn-sm">
-                    <i className="fa-solid fa-filter" /> Filtros
-                </button>
+                <div style={{ position: 'relative' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFilters(!showFilters)}>
+                        <i className="fa-solid fa-filter" /> Filtros {filterType !== 'todos' && `(${filterType})`}
+                    </button>
+                    {showFilters && (
+                        <div className="card" style={{ position: 'absolute', top: '100%', right: 0, zIndex: 10, width: 220, marginTop: 8, padding: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+                            <div style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tipo de Tratamento</div>
+                            <button className="btn btn-clean w-100" style={{ justifyContent: 'flex-start', fontSize: 13, background: filterType === 'todos' ? 'var(--bg-light)' : 'transparent' }} onClick={() => { setFilterType('todos'); setShowFilters(false) }}>Todos</button>
+                            <button className="btn btn-clean w-100" style={{ justifyContent: 'flex-start', fontSize: 13, background: filterType === 'clinico' ? 'var(--bg-light)' : 'transparent' }} onClick={() => { setFilterType('clinico'); setShowFilters(false) }}>Clínico</button>
+                            <button className="btn btn-clean w-100" style={{ justifyContent: 'flex-start', fontSize: 13, background: filterType === 'ortodontia' ? 'var(--bg-light)' : 'transparent' }} onClick={() => { setFilterType('ortodontia'); setShowFilters(false) }}>Ortodontia</button>
+                            <button className="btn btn-clean w-100" style={{ justifyContent: 'flex-start', fontSize: 13, background: filterType === 'protese' ? 'var(--bg-light)' : 'transparent' }} onClick={() => { setFilterType('protese'); setShowFilters(false) }}>Prótese Parcial</button>
+                            <div style={{ height: 1, background: 'var(--border-light)', margin: '8px 0' }} />
+                            <button className="btn btn-clean w-100" style={{ justifyContent: 'flex-start', fontSize: 13 }} onClick={() => { setFilterType('todos'); setSearch('status:leads'); setShowFilters(false) }}>Ver Leads (Não Ativados)</button>
+                            <button className="btn btn-link btn-sm w-100" onClick={() => { setFilterType('todos'); setSearch(''); setShowFilters(false) }}>Limpar Filtros</button>
+                        </div>
+                    )}
+                </div>
                 <button className="btn btn-secondary btn-sm" onClick={() => exportToCSV(pacientes, 'pacientes.csv')}>
                     <i className="fa-solid fa-file-excel" /> Exportar Excel
                 </button>
@@ -139,7 +224,7 @@ export default function Pacientes() {
                                 <th>Paciente</th>
                                 <th>Telefone</th>
                                 <th>E-mail</th>
-                                <th>Cidade</th>
+                                <th>Tipo</th>
                                 <th>Situação</th>
                                 <th>Cadastrado em</th>
                                 <th></th>
@@ -159,7 +244,14 @@ export default function Pacientes() {
                                     </td>
                                     <td>{p.phone || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                                     <td>{p.email || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                                    <td>{p.city || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                                    <td>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                            {p.is_clinico && <span className="badge badge-outline" style={{ fontSize: 10 }}>Clínico</span>}
+                                            {p.is_ortodontia && <span className="badge" style={{ fontSize: 10, background: '#7C3AED', color: '#fff' }}>Ortodontia</span>}
+                                            {p.is_protese && <span className="badge" style={{ fontSize: 10, background: '#F59E0B', color: '#fff' }}>Prótese</span>}
+                                            {!p.is_clinico && !p.is_ortodontia && !p.is_protese && <span className="badge badge-gray" style={{ fontSize: 10 }}>Não Def.</span>}
+                                        </div>
+                                    </td>
                                     <td>{getStatusBadge(p.status)}</td>
                                     <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{format(new Date(p.created_at), 'dd/MM/yyyy')}</td>
                                     <td>
@@ -246,6 +338,23 @@ export default function Pacientes() {
                                 <div className="form-group">
                                     <label className="form-label">Cidade</label>
                                     <input className="form-control" placeholder="Cidade" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
+                                </div>
+                                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                    <label className="form-label" style={{ marginBottom: 12 }}>Tipos de Tratamento</label>
+                                    <div style={{ display: 'flex', gap: 20 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                            <input type="checkbox" style={{ width: 18, height: 18 }} checked={form.is_clinico} onChange={e => setForm(p => ({ ...p, is_clinico: e.target.checked }))} />
+                                            <span style={{ fontSize: 14 }}>Clínico</span>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                            <input type="checkbox" style={{ width: 18, height: 18 }} checked={form.is_ortodontia} onChange={e => setForm(p => ({ ...p, is_ortodontia: e.target.checked }))} />
+                                            <span style={{ fontSize: 14 }}>Ortodontia</span>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                            <input type="checkbox" style={{ width: 18, height: 18 }} checked={form.is_protese} onChange={e => setForm(p => ({ ...p, is_protese: e.target.checked }))} />
+                                            <span style={{ fontSize: 14 }}>Prótese Parcial</span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                     <label className="form-label">Observações</label>

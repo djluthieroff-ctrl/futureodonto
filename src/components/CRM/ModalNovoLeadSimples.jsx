@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../ui/Toast'
 
-export default function ModalNovoPacienteSimples() {
+export default function ModalNovoLeadSimples() {
     const [isOpen, setIsOpen] = useState(false)
-    const [form, setForm] = useState({ name: '', phone: '', email: '', source: 'Manual', is_ortodontia: false, is_protese: false, is_clinico: true })
+    const [form, setForm] = useState({ name: '', phone: '', email: '', source: 'Manual' })
     const [saving, setSaving] = useState(false)
     const toast = useToast()
 
     useEffect(() => {
         const handleOpen = () => setIsOpen(true)
-        window.addEventListener('open-modal-paciente-simples', handleOpen)
-        return () => window.removeEventListener('open-modal-paciente-simples', handleOpen)
+        window.addEventListener('open-modal-lead-simples', handleOpen)
+        return () => window.removeEventListener('open-modal-lead-simples', handleOpen)
     }, [])
 
     const handleSave = async () => {
@@ -19,29 +19,23 @@ export default function ModalNovoPacienteSimples() {
         setSaving(true)
 
         try {
-            const patientPayload = {
+            const { error } = await supabase.from('leads').insert([{
                 ...form,
-                last_contact: new Date().toISOString()
-            }
+                etapa: 'lead',
+                type: 'rede_social', // Padrao para cadastro manual
+                created_at: new Date().toISOString()
+            }])
 
-            const { error } = await supabase.from('patients').insert([patientPayload])
+            if (error) throw error
 
-            if (error) {
-                if (error.code === '23505') {
-                    toast.error('Já existe um paciente cadastrado com este telefone.')
-                } else {
-                    throw error
-                }
-            }
-
-            toast.success('Paciente cadastrado com sucesso!')
+            toast.success('Lead cadastrado com sucesso!')
             setIsOpen(false)
-            setForm({ name: '', phone: '', email: '', source: 'Manual', is_ortodontia: false, is_protese: false, is_clinico: true })
-            // Opcional: disparar evento para atualizar listas se necessário
-            window.dispatchEvent(new CustomEvent('patient-added'))
+            setForm({ name: '', phone: '', email: '', source: 'Manual' })
+            // Opcional: disparar evento para atualizar listas se necessario
+            window.dispatchEvent(new CustomEvent('lead-added'))
         } catch (err) {
-            console.error('Erro ao salvar paciente:', err)
-            toast.error('Erro ao cadastrar paciente. Verifique os dados e tente novamente.')
+            console.error('Erro ao salvar lead:', err)
+            toast.error('Erro ao cadastrar lead.')
         } finally {
             setSaving(false)
         }
@@ -53,7 +47,7 @@ export default function ModalNovoPacienteSimples() {
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setIsOpen(false)}>
             <div className="modal modal-sm">
                 <div className="modal-header">
-                    <div className="modal-title">NOVO PACIENTE</div>
+                    <div className="modal-title">NOVO LEAD (AVALIAÇÃO)</div>
                     <button className="modal-close" onClick={() => setIsOpen(false)}>
                         <i className="fa-solid fa-xmark" />
                     </button>
@@ -61,7 +55,7 @@ export default function ModalNovoPacienteSimples() {
 
                 <div className="modal-body">
                     <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 20 }}>
-                        Cadastre rapidamente um novo paciente para iniciar o tratamento.
+                        Use esta opção para pessoas que ainda não são pacientes e virão para uma avaliação.
                     </p>
 
                     <div className="form-group">
@@ -70,7 +64,7 @@ export default function ModalNovoPacienteSimples() {
                             className="form-control"
                             value={form.name}
                             onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                            placeholder="Nome do paciente"
+                            placeholder="Nome do interessado"
                             autoFocus
                         />
                     </div>
@@ -103,36 +97,18 @@ export default function ModalNovoPacienteSimples() {
                             onChange={e => setForm(p => ({ ...p, source: e.target.value }))}
                         >
                             <option value="Manual">Manual / Balcão</option>
-                            <option value="Indicacao">Indicação</option>
-                            <option value="Google">Google / Site</option>
                             <option value="Instagram">Instagram</option>
                             <option value="Facebook">Facebook</option>
+                            <option value="Google">Google / Site</option>
+                            <option value="Indicacao">Indicação</option>
                         </select>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Tipos de Tratamento</label>
-                        <div style={{ display: 'flex', gap: 20, paddingTop: 8 }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                <input type="checkbox" checked={form.is_clinico} onChange={e => setForm(p => ({ ...p, is_clinico: e.target.checked }))} />
-                                <span style={{ fontSize: 13 }}>Clínico</span>
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                <input type="checkbox" checked={form.is_ortodontia} onChange={e => setForm(p => ({ ...p, is_ortodontia: e.target.checked }))} />
-                                <span style={{ fontSize: 13 }}>Ortodontia</span>
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                <input type="checkbox" checked={form.is_protese} onChange={e => setForm(p => ({ ...p, is_protese: e.target.checked }))} />
-                                <span style={{ fontSize: 13 }}>Prótese</span>
-                            </label>
-                        </div>
                     </div>
                 </div>
 
                 <div className="modal-footer">
                     <button className="btn btn-secondary" onClick={() => setIsOpen(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                        {saving ? 'Salvando...' : 'Cadastrar Paciente'}
+                        {saving ? 'Salvando...' : 'Criar Lead'}
                     </button>
                 </div>
             </div>

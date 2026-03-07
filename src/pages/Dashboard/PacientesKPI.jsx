@@ -50,17 +50,17 @@ export default function PacientesKPI({ tipo, titulo, descricao, cor }) {
                         .gte('data_inicio', ha30d)
 
                     const unicos = new Map()
-                    ;(data || []).forEach((a) => {
-                        unicos.set(a.paciente_id, {
-                            id: a.paciente_id,
-                            name: a.patients?.name,
-                            phone: a.patients?.phone,
-                            email: a.patients?.email,
-                            birth_date: a.patients?.birth_date,
-                            last_contact: a.patients?.last_contact,
-                            created_at: a.patients?.created_at,
+                        ; (data || []).forEach((a) => {
+                            unicos.set(a.paciente_id, {
+                                id: a.paciente_id,
+                                name: a.patients?.name,
+                                phone: a.patients?.phone,
+                                email: a.patients?.email,
+                                birth_date: a.patients?.birth_date,
+                                last_contact: a.patients?.last_contact,
+                                created_at: a.patients?.created_at,
+                            })
                         })
-                    })
                     setPacientes([...unicos.values()])
                     break
                 }
@@ -70,20 +70,20 @@ export default function PacientesKPI({ tipo, titulo, descricao, cor }) {
                         .select('paciente_id,patients(name),patients(phone),patients(email),patients(birth_date),patients(last_contact),patients(created_at)')
                         .eq('situacao', 'agendado')
                         .gte('data_inicio', today)
-                        .lte('data_inicio', `${prox72h}T23:59:59`)
+                        .lte('data_inicio', `${prox48h}T23:59:59`)
 
                     const unicos = new Map()
-                    ;(data || []).forEach((a) => {
-                        unicos.set(a.paciente_id, {
-                            id: a.paciente_id,
-                            name: a.patients?.name,
-                            phone: a.patients?.phone,
-                            email: a.patients?.email,
-                            birth_date: a.patients?.birth_date,
-                            last_contact: a.patients?.last_contact,
-                            created_at: a.patients?.created_at,
+                        ; (data || []).forEach((a) => {
+                            unicos.set(a.paciente_id, {
+                                id: a.paciente_id,
+                                name: a.patients?.name,
+                                phone: a.patients?.phone,
+                                email: a.patients?.email,
+                                birth_date: a.patients?.birth_date,
+                                last_contact: a.patients?.last_contact,
+                                created_at: a.patients?.created_at,
+                            })
                         })
-                    })
                     setPacientes([...unicos.values()])
                     break
                 }

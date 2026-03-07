@@ -153,6 +153,10 @@ export default function Header() {
                         <i className="fa-solid fa-chevron-down" style={{ fontSize: 10, marginLeft: 4 }} />
                     </button>
                     <div className="header-dropdown-menu">
+                        <div className="header-dropdown-item" onClick={() => window.dispatchEvent(new CustomEvent('open-modal-lead-simples'))}>
+                            <i className="fa-solid fa-bullhorn" />
+                            Lead (Avaliação)
+                        </div>
                         <div className="header-dropdown-item" onClick={() => window.dispatchEvent(new CustomEvent('open-modal-paciente-simples'))}>
                             <i className="fa-solid fa-user-plus" />
                             Paciente
@@ -196,14 +200,17 @@ export default function Header() {
                         </div>
                     )}
                 </div>
+
                 <button className="header-btn" title="Ajuda" id="header-help">
                     <i className="fa-regular fa-circle-question" />
                 </button>
+
                 {isAdmin && (
                     <button className="header-btn" title="Configurações" id="header-settings" onClick={() => navigate('/personalizar')}>
                         <i className="fa-solid fa-gear" />
                     </button>
                 )}
+
                 <div className="header-dropdown-container">
                     <div className="header-avatar" id="header-avatar" title={user?.email || 'Perfil do usuário'}>
                         {user?.user_metadata?.name

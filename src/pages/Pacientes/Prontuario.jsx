@@ -5,6 +5,7 @@ import { format, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useToast } from '../../components/ui/Toast'
 import { registrarAuditoria } from '../../lib/auditoria'
+import ModalAgendamento from '../Agenda/ModalAgendamento'
 
 const SIDEBAR_MENU = [
     { key: 'dados', label: 'Dados Pessoais', icon: 'fa-user' },
@@ -42,6 +43,20 @@ export default function ProntuarioPaciente() {
     const [alertTab, setAlertTab] = useState('anamnese')
     const [filtroEvolucao, setFiltroEvolucao] = useState('')
     const [quickAction, setQuickAction] = useState('')
+    const [anamneses, setAnamneses] = useState([])
+    const [receitas, setReceitas] = useState([])
+    const [tratamentos, setTratamentos] = useState([])
+    const [modalAnamnese, setModalAnamnese] = useState(false)
+    const [perguntasAnamnese, setPerguntasAnamnese] = useState([
+        { id: 1, pergunta: 'Possui alguma alergia?', resposta: '', obs: '' },
+        { id: 2, pergunta: 'Está sob tratamento médico?', resposta: '', obs: '' },
+        { id: 3, pergunta: 'Toma algum medicamento?', resposta: '', obs: '' },
+        { id: 4, pergunta: 'Problemas de cicatrização?', resposta: '', obs: '' },
+        { id: 5, pergunta: 'Hipertensão ou Diabetes?', resposta: '', obs: '' },
+    ])
+    const [modalAgendamentoDirect, setModalAgendamentoDirect] = useState(false)
+    const [dentistasLista, setDentistasLista] = useState([])
+    const [cadeirasLista, setCadeirasLista] = useState([])
 
     useEffect(() => {
         toastRef.current = toast
@@ -75,6 +90,49 @@ export default function ProntuarioPaciente() {
             } else {
                 setAnotacoes(an || [])
             }
+            const { data: anam, error: anamError } = await supabase
+                .from('paciente_anamneses')
+                .select('*')
+                .eq('paciente_id', id)
+                .order('criado_em', { ascending: false })
+
+            if (anamError) {
+                console.warn('Erro ao carregar anamneses:', anamError)
+            } else {
+                setAnamneses(anam || [])
+            }
+
+            const { data: rec, error: recError } = await supabase
+                .from('financeiro_receitas')
+                .select('*')
+                .eq('paciente_id', id)
+                .order('created_at', { ascending: false })
+
+            if (recError) {
+                console.warn('Erro ao carregar receitas:', recError)
+            } else {
+                setReceitas(rec || [])
+            }
+
+            const { data: trat, error: tratError } = await supabase
+                .from('tratamentos')
+                .select('*, dentistas(nome)')
+                .eq('paciente_id', id)
+                .order('created_at', { ascending: false })
+
+            if (tratError) {
+                console.warn('Erro ao carregar tratamentos:', tratError)
+            } else {
+                setTratamentos(trat || [])
+            }
+
+            const [{ data: d }, { data: c }] = await Promise.all([
+                supabase.from('dentistas').select('id,nome').eq('ativo', true).order('nome'),
+                supabase.from('cadeiras').select('id,nome').eq('ativa', true).order('nome')
+            ])
+            setDentistasLista(d || [])
+            setCadeirasLista(c || [])
+
         } catch (error) {
             console.error('Erro ao carregar prontuario:', error)
             toastRef.current.error('Erro ao carregar dados do prontuario')
@@ -190,6 +248,27 @@ export default function ProntuarioPaciente() {
         setQuickAction('')
     }
 
+    const handleAtivarPaciente = async () => {
+        if (!confirm('Deseja marcar este tratamento como fechado e ativar o paciente?')) return
+        setSaving(true)
+        try {
+            const { error } = await supabase.from('patients').update({ is_active_patient: true }).eq('id', id)
+            if (error) throw error
+            setPaciente(prev => ({ ...prev, is_active_patient: true }))
+            toast.success('Paciente ativado e tratamento marcado como fechado!')
+            await registrarAuditoria({
+                modulo: 'Pacientes',
+                acao: 'Paciente ativado',
+                detalhes: `Paciente: ${paciente?.name || id}`,
+            })
+        } catch (error) {
+            console.error('Erro ao ativar paciente:', error)
+            toast.error('Erro ao ativar paciente')
+        } finally {
+            setSaving(false)
+        }
+    }
+
     const renderAlertContent = () => {
         if (alertTab === 'anamnese') {
             return {
@@ -244,7 +323,9 @@ export default function ProntuarioPaciente() {
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
                             N {paciente.id.split('-')[0].toUpperCase()}
-                            <span className="badge badge-success" style={{ marginLeft: 6, verticalAlign: 'middle', fontSize: 10 }}>Ativo</span>
+                            <span className={`badge badge-${paciente.is_active_patient ? 'success' : 'warning'}`} style={{ marginLeft: 6, verticalAlign: 'middle', fontSize: 10 }}>
+                                {paciente.is_active_patient ? 'Ativo' : 'Em Avaliação'}
+                            </span>
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 16 }}>
@@ -333,14 +414,17 @@ export default function ProntuarioPaciente() {
                                                     {proximosAgendamentos[0].motivo || 'Consulta Geral'} - Dr. {proximosAgendamentos[0].dentistas?.nome || 'Nao informado'}
                                                 </div>
                                             </div>
-                                            <button className="btn btn-clean w-100" style={{ fontSize: 12 }} onClick={() => navigate('/agenda')}>Ver todos os agendamentos</button>
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                <button className="btn btn-primary btn-sm w-100" onClick={() => setModalAgendamentoDirect(true)}>Agendar Novo</button>
+                                                <button className="btn btn-secondary btn-sm w-100" onClick={() => navigate('/agenda')}>Ver todos</button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div style={{ padding: '40px 0' }}>
                                             <div style={{ fontSize: 40, color: 'var(--border-dark)', marginBottom: 16 }}><i className="fa-solid fa-calendar" /></div>
                                             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Nenhum proximo agendamento para este paciente.</div>
-                                            <button className="btn btn-link" style={{ marginTop: 8 }} onClick={() => navigate('/agenda')}>
-                                                Clique aqui para ir para a Agenda
+                                            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setModalAgendamentoDirect(true)}>
+                                                Agendar Consulta Agora
                                             </button>
                                         </div>
                                     )}
@@ -476,12 +560,177 @@ export default function ProntuarioPaciente() {
                                             )}
                                         </div>
                                     ))}
+                                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                        <label className="form-label">Tipos de Tratamento</label>
+                                        {!editando ? (
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                {form.is_clinico && <span className="badge badge-outline">Clínico</span>}
+                                                {form.is_ortodontia && <span className="badge" style={{ background: '#7C3AED', color: '#fff' }}>Ortodontia</span>}
+                                                {form.is_protese && <span className="badge" style={{ background: '#F59E0B', color: '#fff' }}>Prótese</span>}
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', gap: 20, paddingTop: 8 }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={form.is_clinico} onChange={e => setForm(p => ({ ...p, is_clinico: e.target.checked }))} />
+                                                    <span style={{ fontSize: 13 }}>Clínico</span>
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={form.is_ortodontia} onChange={e => setForm(p => ({ ...p, is_ortodontia: e.target.checked }))} />
+                                                    <span style={{ fontSize: 13 }}>Ortodontia</span>
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={form.is_protese} onChange={e => setForm(p => ({ ...p, is_protese: e.target.checked }))} />
+                                                    <span style={{ fontSize: 13 }}>Prótese</span>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 {editando && (
                                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
                                         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                                             {saving ? 'Salvando...' : 'Salvar Alteracoes'}
                                         </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : activeSection === 'anamnese' ? (
+                        <div className="card">
+                            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="card-title">Histórico de Anamneses</div>
+                                <button className="btn btn-primary btn-sm" onClick={() => setModalAnamnese(true)}>Nova Anamnese</button>
+                            </div>
+                            <div className="card-body">
+                                {anamneses.length === 0 ? (
+                                    <div className="empty-state">
+                                        <i className="fa-solid fa-clipboard-list empty-state-icon" />
+                                        <h3>Nenhuma anamnese registrada</h3>
+                                        <p>Clique em Nova Anamnese para preencher o formulário inicial.</p>
+                                    </div>
+                                ) : (
+                                    <div className="table-wrapper">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Data</th>
+                                                    <th>Resumo</th>
+                                                    <th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {anamneses.map(a => (
+                                                    <tr key={a.id}>
+                                                        <td>{format(new Date(a.criado_em), 'dd/MM/yyyy HH:mm')}</td>
+                                                        <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                                            {a.questionario?.slice(0, 2).map(q => `${q.pergunta}: ${q.resposta}`).join(', ')}...
+                                                        </td>
+                                                        <td>
+                                                            <button className="btn btn-clean icon-only" title="Visualizar Detalhes"><i className="fa-solid fa-eye" /></button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : activeSection === 'conta_corrente' ? (
+                        <div className="card">
+                            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="card-title">Extrato Financeiro</div>
+                                <div style={{ fontWeight: 600, color: 'var(--primary)' }}>
+                                    Saldo Devedor: R$ {receitas.reduce((acc, curr) => acc + (Number(curr.valor_total) - Number(curr.valor_pago || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                            <div className="card-body">
+                                {receitas.length === 0 ? (
+                                    <div className="empty-state">
+                                        <i className="fa-solid fa-file-invoice-dollar empty-state-icon" />
+                                        <h3>Nenhum registro financeiro</h3>
+                                        <p>Orcamentos e pagamentos aparecerão aqui.</p>
+                                    </div>
+                                ) : (
+                                    <div className="table-wrapper">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Data</th>
+                                                    <th>Descricao</th>
+                                                    <th>Valor Total</th>
+                                                    <th>Valor Pago</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {receitas.map(r => (
+                                                    <tr key={r.id}>
+                                                        <td>{format(new Date(r.created_at), 'dd/MM/yyyy')}</td>
+                                                        <td>{r.descricao}</td>
+                                                        <td>R$ {Number(r.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ color: 'var(--success)' }}>R$ {Number(r.valor_pago || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                        <td>
+                                                            <span className={`badge badge-${r.status === 'pago' ? 'success' : 'warning'}`}>
+                                                                {r.status.toUpperCase()}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : activeSection === 'tratamentos' ? (
+                        <div className="card">
+                            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="card-title">Planos de Tratamento e Orcamentos</div>
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                    {!paciente.is_active_patient && (
+                                        <button className="btn btn-success btn-sm" onClick={handleAtivarPaciente} disabled={saving}>
+                                            <i className="fa-solid fa-check-double" /> Fechar Tratamento (Ativar)
+                                        </button>
+                                    )}
+                                    <button className="btn btn-primary btn-sm" onClick={() => toast.info('Funcionalidade de Novo Orcamento em breve')}>Novo Orcamento</button>
+                                </div>
+                            </div>
+                            <div className="card-body">
+                                {tratamentos.length === 0 ? (
+                                    <div className="empty-state">
+                                        <i className="fa-solid fa-file-medical empty-state-icon" />
+                                        <h3>Nenhum orcamento encontrado</h3>
+                                        <p>Crie planos de tratamento para este paciente.</p>
+                                    </div>
+                                ) : (
+                                    <div className="table-wrapper">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Data</th>
+                                                    <th>Descricao</th>
+                                                    <th>Dentista</th>
+                                                    <th>Valor</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {tratamentos.map(t => (
+                                                    <tr key={t.id}>
+                                                        <td>{format(new Date(t.created_at), 'dd/MM/yyyy')}</td>
+                                                        <td>{t.descricao}</td>
+                                                        <td>{t.dentistas?.nome || '-'}</td>
+                                                        <td style={{ fontWeight: 600 }}>R$ {Number(t.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                        <td>
+                                                            <span className={`badge badge-${t.status === 'aprovado' ? 'success' : t.status === 'finalizado' ? 'primary' : 'warning'}`}>
+                                                                {(t.status || 'ORCAMENTO').toUpperCase()}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 )}
                             </div>
@@ -525,6 +774,69 @@ export default function ProntuarioPaciente() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {modalAnamnese && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModalAnamnese(false)}>
+                    <div className="modal modal-lg">
+                        <div className="modal-header">
+                            <div className="modal-title">Nova Anamnese</div>
+                            <button className="modal-close" onClick={() => setModalAnamnese(false)}><i className="fa-solid fa-xmark" /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="anamnese-form">
+                                {perguntasAnamnese.map((q, idx) => (
+                                    <div key={q.id} style={{ marginBottom: 20, padding: 16, background: 'var(--bg-light)', borderRadius: 12 }}>
+                                        <div style={{ fontWeight: 600, marginBottom: 12 }}>{idx + 1}. {q.pergunta}</div>
+                                        <div style={{ display: 'flex', gap: 24, marginBottom: 12 }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                                <input type="radio" name={`q-${q.id}`} value="Sim" checked={q.resposta === 'Sim'} onChange={e => {
+                                                    const newQ = [...perguntasAnamnese];
+                                                    newQ[idx].resposta = e.target.value;
+                                                    setPerguntasAnamnese(newQ);
+                                                }} /> Sim
+                                            </label>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                                <input type="radio" name={`q-${q.id}`} value="Não" checked={q.resposta === 'Não'} onChange={e => {
+                                                    const newQ = [...perguntasAnamnese];
+                                                    newQ[idx].resposta = e.target.value;
+                                                    setPerguntasAnamnese(newQ);
+                                                }} /> Não
+                                            </label>
+                                        </div>
+                                        <textarea
+                                            className="form-control"
+                                            placeholder="Observações ou detalhes..."
+                                            value={q.obs}
+                                            onChange={e => {
+                                                const newQ = [...perguntasAnamnese];
+                                                newQ[idx].obs = e.target.value;
+                                                setPerguntasAnamnese(newQ);
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setModalAnamnese(false)}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={handleSaveAnamnese} disabled={saving}>Salvar Anamnese</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modalAgendamentoDirect && (
+                <ModalAgendamento
+                    dataInicial={new Date()}
+                    eventoExistente={null}
+                    dentistas={dentistasLista}
+                    cadeiras={cadeirasLista}
+                    onClose={() => {
+                        setModalAgendamentoDirect(false)
+                        load()
+                    }}
+                />
             )}
         </>
     )

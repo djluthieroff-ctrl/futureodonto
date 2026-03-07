@@ -19,8 +19,8 @@ const KPI_CONFIG = {
         cor: '#EF4444',
     },
     nao_confirmados: {
-        titulo: 'Agendamentos nao confirmados',
-        descricao: 'Pacientes com agendamento pendente nas proximas 72 horas',
+        titulo: 'Agendamentos não confirmados',
+        descricao: 'Pacientes com agendamento pendente nas próximas 48 horas',
         cor: '#F97316',
     },
 }

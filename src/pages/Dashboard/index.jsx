@@ -119,19 +119,19 @@ export default function Dashboard() {
     const navigate = useNavigate()
     const [metrics, setMetrics] = useState({
         aniversariantes: 0,
-        agendamentosSemana: 0,
+        agendamentosMes: 0,
         faltaramDesmarcaram: 0,
         naoConfirmados: 0,
-        orcamentosNaoAprovados: 0,
+        reativadosUltimaGestao: 0,
         pacientesAusentes: 0,
-        ticketsAbertos: 0,
-        tratamentosAbertos: 0,
+        ortodontiaSemAgendamento: 0,
         pastaVermelha: 0
     })
     const [funil, setFunil] = useState([])
     const [funilDetalheModal, setFunilDetalheModal] = useState({ open: false, etapa: null, leads: [], loading: false })
     const [agSemanaModal, setAgSemanaModal] = useState({ open: false, agendamentos: [], loading: false })
     const [pVermelhaModal, setPVermelhaModal] = useState({ open: false, leads: [], loading: false })
+    const [ortoSemAgendamentoModal, setOrtoSemAgendamentoModal] = useState({ open: false, pacientes: [], loading: false })
     const [parcelas, setParcelas] = useState([])
     const [loading, setLoading] = useState(true)
     const [currentDate, setCurrentDate] = useState(new Date())
@@ -144,7 +144,7 @@ export default function Dashboard() {
 
             const today = format(new Date(), 'yyyy-MM-dd')
             const mm = format(currentDate, 'MM')
-            const prox72h = format(addDays(new Date(), 3), 'yyyy-MM-dd')
+            const prox48h = format(addDays(new Date(), 2), 'yyyy-MM-dd')
             const ha6meses = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
             const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -162,23 +162,25 @@ export default function Dashboard() {
                 supabase
                     .from('agendamentos')
                     .select('id', { count: 'exact', head: true })
-                    .gte('data_inicio', `${inicioSemana}T00:00:00`)
-                    .lte('data_inicio', `${fimSemana}T23:59:59`)
+                    .gte('data_inicio', `${inicioMes}T00:00:00`)
+                    .lte('data_inicio', `${fimMes}T23:59:59`)
                     .eq('situacao', 'atendido'),
                 supabase
                     .from('agendamentos')
                     .select('id,situacao', { count: 'exact' })
                     .eq('situacao', 'agendado')
                     .gte('data_inicio', today)
-                    .lte('data_inicio', `${prox72h}T23:59:59`),
+                    .lte('data_inicio', `${prox48h}T23:59:59`),
                 supabase.from('agendamentos').select('id', { count: 'exact' }).in('situacao', ['faltou', 'desmarcou']).gte('data_inicio', ha30d),
                 supabase.from('agendamentos').select('id', { count: 'exact' }).eq('situacao', 'agendado').lte('data_inicio', `${today}T23:59:59`),
-                supabase.from('tratamentos').select('id', { count: 'exact' }).eq('status', 'orcamento'),
+                supabase.from('leads').select('id', { count: 'exact' }).eq('is_ultima_gestao', true).eq('convertido_em_paciente', true),
                 supabase.from('patients').select('id', { count: 'exact' }).lte('last_contact', `${ha6meses}T00:00:00`),
+                supabase.from('patients').select('id,name,phone').eq('is_ortodontia', true),
+                supabase.from('agendamentos').select('paciente_id').gte('data_inicio', `${inicioMes}T00:00:00`).lte('data_inicio', `${fimMes}T23:59:59`),
                 supabase.from('financeiro_parcelas').select('id,valor,data_vencimento,receita_id').eq('status', 'pendente').lte('data_vencimento', today).limit(20),
             ])
 
-            const [leadsRes, agSemanaRes, , faltaramRes, naoConfRes, orcNaoAprovRes, ausentesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
+            const [leadsRes, agSemanaRes, , faltaramRes, naoConfRes, reativadosRes, ausentesRes, ortoRes, agMesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
 
             const { data: aniversPs } = await supabase.from('patients').select('id,birth_date').not('birth_date', 'is', null)
             const aniversariantes = (aniversPs || []).filter((p) => p.birth_date?.split('-')[1] === mm).length
@@ -203,7 +205,7 @@ export default function Dashboard() {
             }
 
             const etapas = ['lead', 'consulta_agendada', 'faltou_desmarcaram', 'atendido', 'orcamento_criado', 'orcamento_aprovado', 'orcamento_perdido']
-            const etapasLabels = ['Leads', 'Consulta agendada', 'Faltaram ou desmarcaram', 'Atendidos', 'Orcamento criado', 'Orcamento aprovado', 'Orcamento perdido']
+            const etapasLabels = ['Leads', 'Consulta agendada', 'Faltaram ou desmarcaram', 'Atendidos', 'Orçamento criado', 'Orçamento aprovado', 'Orçamento perdido']
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
             const rawLeads = leadsRes.data || []
@@ -220,10 +222,10 @@ export default function Dashboard() {
             const atendidosNoPeriodo = leadsNoPeriodo.filter(l => l.attended === true || l.etapa === 'atendido')
             const aprovadosNoPeriodo = leadsNoPeriodo.filter(l => l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado')
 
-            // Faltas: Marcados manualmente OU (agendamentos passados E não atendidos)
+            // Faltas: Marcados manualmente OU (agendamentos passados E (não atendidos OU venda não fechada))
             const faltaramNoPeriodo = leadsNoPeriodo.filter(l =>
                 l.etapa === 'faltou_desmarcaram' ||
-                (l.scheduled_at && l.scheduled_at < todayIso && l.attended !== true)
+                (l.scheduled_at && l.scheduled_at < todayIso && (l.attended !== true || l.sale_status !== 'sold'))
             )
 
             const funnelData = {
@@ -243,16 +245,18 @@ export default function Dashboard() {
                 color: etapasCores[i]
             })))
 
+            const agendadosIds = new Set((agMesRes.data || []).map(a => a.paciente_id))
+            const ortoSemAgendamento = (ortoRes.data || []).filter(p => !agendadosIds.has(p.id))
+
             setParcelas(parcelasData)
             setMetrics({
                 aniversariantes,
-                agendamentosSemana: agSemanaRes.count || 0,
-                faltaramDesmarcaram: faltaramNoPeriodo.length, // Sincronizado com o funil
+                agendamentosMes: agSemanaRes.count || 0,
+                faltaramDesmarcaram: faltaramNoPeriodo.length,
                 naoConfirmados: naoConfRes.count || 0,
-                orcamentosNaoAprovados: orcNaoAprovRes.count || 0,
+                reativadosUltimaGestao: reativadosRes.count || 0,
                 pacientesAusentes: ausentesRes.count || 0,
-                ticketsAbertos: 0,
-                tratamentosAbertos: 0,
+                ortodontiaSemAgendamento: ortoSemAgendamento.length,
                 pastaVermelha: funnelData.orcamento_perdido
             })
         } catch (e) {
@@ -300,13 +304,13 @@ export default function Dashboard() {
                 leadsData = leadsNoPeriodo.filter(l => (l.attended === true || l.etapa === 'atendido'))
             } else if (etapa.key === 'orcamento_aprovado') {
                 leadsData = leadsNoPeriodo.filter(l => (l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado'))
-            } else if (etapa.key === 'consulta_agendada') {
-                leadsData = leadsNoPeriodo.filter(l => l.scheduled_at)
             } else if (etapa.key === 'faltou_desmarcaram') {
                 leadsData = leadsNoPeriodo.filter(l =>
                     l.etapa === 'faltou_desmarcaram' ||
-                    (l.scheduled_at && l.scheduled_at < todayIso && l.attended !== true)
+                    (l.scheduled_at && l.scheduled_at < todayIso && (l.attended !== true || l.sale_status !== 'sold'))
                 )
+            } else if (etapa.key === 'reativados') {
+                leadsData = rawData.filter(l => l.is_ultima_gestao === true && (l.convertido_em_paciente === true || l.paciente_id))
             } else {
                 leadsData = leadsNoPeriodo
             }
@@ -341,17 +345,16 @@ export default function Dashboard() {
     }, [currentDate])
 
     const handleOpenAgendamentosSemana = useCallback(async () => {
-        console.log('Abrindo agendamentos semana...');
         setAgSemanaModal({ open: true, agendamentos: [], loading: true })
         try {
-            const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
-            const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+            const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
+            const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
 
             const { data, error } = await supabase
                 .from('agendamentos')
                 .select('id, data_inicio, situacao, motivo, patients(name)')
-                .gte('data_inicio', `${inicioSemana}T00:00:00`)
-                .lte('data_inicio', `${fimSemana}T23:59:59`)
+                .gte('data_inicio', `${inicioMes}T00:00:00`)
+                .lte('data_inicio', `${fimMes}T23:59:59`)
                 .eq('situacao', 'atendido')
                 .order('data_inicio', { ascending: true })
 
@@ -419,18 +422,18 @@ export default function Dashboard() {
             icon: 'fa-cake-candles',
             iconBg: '#F59E0B',
             value: metrics.aniversariantes,
-            label: 'Aniversariantes do mes',
-            desc: 'Pacientes fazendo aniversario',
-            period: 'Este mes',
+            label: 'Aniversariantes do mês',
+            desc: 'Pacientes fazendo aniversário',
+            period: 'Este mês',
             onClick: () => navigate('/crm/kpis/aniversariantes'),
         },
         {
             icon: 'fa-share-nodes',
             iconBg: '#8B5CF6',
-            value: metrics.agendamentosSemana,
+            value: metrics.agendamentosMes,
             label: 'Agendamentos realizados',
-            desc: 'Consultas atendidas na semana',
-            period: 'Esta semana',
+            desc: 'Consultas atendidas no mês',
+            period: 'Este mês',
             onClick: handleOpenAgendamentosSemana,
         },
         {
@@ -446,27 +449,27 @@ export default function Dashboard() {
             icon: 'fa-calendar-xmark',
             iconBg: '#F97316',
             value: metrics.naoConfirmados,
-            label: 'Agendamentos nao confirmados',
+            label: 'Agendamentos não confirmados',
             desc: 'Seu custo hora. Reduza as faltas.',
-            period: 'Proximas 72 horas',
+            period: 'Próximas 48 horas',
             onClick: () => navigate('/crm/kpis/nao_confirmados'),
         },
         {
-            icon: 'fa-file-invoice-dollar',
+            icon: 'fa-user-check',
             iconBg: '#06B6D4',
-            value: metrics.orcamentosNaoAprovados,
-            label: 'Orcamentos nao aprovados',
-            desc: 'Em orcamentos nao aprovados',
-            period: 'Ultimos 30 dias',
-            onClick: () => handleOpenEtapaDetalhe({ key: 'orcamento_criado', label: 'Orcamentos criados (Não aprovados)' }),
+            value: metrics.reativadosUltimaGestao,
+            label: 'Pacientes da última gestão reativados',
+            desc: 'Leads convertidos para pacientes',
+            period: 'Total acumulado',
+            onClick: () => handleOpenEtapaDetalhe({ key: 'reativados', label: 'Pacientes Reativados (Última Gestão)' }),
         },
         {
             icon: 'fa-user-clock',
             iconBg: '#6366F1',
             value: metrics.pacientesAusentes,
-            label: 'Pacientes ausentes ha 6 meses',
+            label: 'Pacientes ausentes há 6 meses',
             desc: 'Receita gerada por esses pacientes',
-            period: 'Ultimos 2 anos',
+            period: 'Últimos 2 anos',
             onClick: () => navigate('/crm/kpis/nao_agendaram'),
         },
         {
@@ -474,17 +477,35 @@ export default function Dashboard() {
             iconBg: '#EC4899',
             value: metrics.pastaVermelha,
             label: 'Pasta Vermelha',
-            desc: 'Orcamentos feitos mas nao fechados',
-            period: 'Este mes',
+            desc: 'Orçamentos feitos mas não fechados',
+            period: 'Este mês',
             onClick: handleOpenPastaVermelha,
         },
         {
             icon: 'fa-tooth',
             iconBg: '#10B981',
-            value: metrics.tratamentosAbertos,
-            label: 'Tratamentos abertos sem agendamento',
-            desc: 'Receita gerada nestes tratamentos',
-            period: 'Ultimos 30 dias',
+            value: metrics.ortodontiaSemAgendamento,
+            label: 'Ortodontia sem agendamento no mês',
+            desc: 'Pacientes de orto pendentes de consulta',
+            period: 'Este mês',
+            onClick: async () => {
+                setOrtoSemAgendamentoModal({ open: true, pacientes: [], loading: true })
+                try {
+                    const inicioMes = format(startOfMonth(currentDate), 'yyyy-MM-dd')
+                    const fimMes = format(endOfMonth(currentDate), 'yyyy-MM-dd')
+
+                    const { data: ortoData } = await supabase.from('patients').select('id,name,phone').eq('is_ortodontia', true)
+                    const { data: agData } = await supabase.from('agendamentos').select('paciente_id').gte('data_inicio', `${inicioMes}T00:00:00`).lte('data_inicio', `${fimMes}T23:59:59`)
+
+                    const agendadosIds = new Set((agData || []).map(a => a.paciente_id))
+                    const pendentes = (ortoData || []).filter(p => !agendadosIds.has(p.id))
+
+                    setOrtoSemAgendamentoModal({ open: true, pacientes: pendentes, loading: false })
+                } catch (err) {
+                    console.error('Erro ao carregar ortodontia sem agendamento:', err)
+                    setOrtoSemAgendamentoModal({ open: false, pacientes: [], loading: false })
+                }
+            }
         },
     ]
 
@@ -655,7 +676,7 @@ export default function Dashboard() {
                 <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setAgSemanaModal(prev => ({ ...prev, open: false }))}>
                     <div className="modal modal-md">
                         <div className="modal-header">
-                            <div className="modal-title">Agendamentos Realizados (Semana)</div>
+                            <div className="modal-title">Agendamentos Realizados ({format(currentDate, 'MMMM', { locale: ptBR })})</div>
                             <button className="modal-close" onClick={() => setAgSemanaModal(prev => ({ ...prev, open: false }))}>
                                 <i className="fa-solid fa-xmark" />
                             </button>
@@ -679,7 +700,7 @@ export default function Dashboard() {
                                             {agSemanaModal.agendamentos.map(ag => (
                                                 <tr key={ag.id}>
                                                     <td><strong>{ag.patients?.name || 'Paciente'}</strong></td>
-                                                    <td>{format(parseISO(ag.data_inicio), "dd/MM 'às' HH:mm")}</td>
+                                                    <td>{format(new Date(ag.data_inicio), "dd/MM 'às' HH:mm")}</td>
                                                     <td>{ag.motivo || 'Consulta'}</td>
                                                 </tr>
                                             ))}
@@ -720,8 +741,49 @@ export default function Dashboard() {
                                             {pVermelhaModal.leads.map(lead => (
                                                 <tr key={lead.id}>
                                                     <td><strong>{lead.patient_name || lead.name}</strong></td>
-                                                    <td>{lead.scheduled_at ? format(parseISO(lead.scheduled_at), 'dd/MM/yyyy') : '-'}</td>
+                                                    <td>{lead.scheduled_at ? format(new Date(lead.scheduled_at + 'T12:00:00'), 'dd/MM/yyyy') : '-'}</td>
                                                     <td><span className="badge badge-warning">Pasta Vermelha</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {ortoSemAgendamentoModal.open && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setOrtoSemAgendamentoModal(prev => ({ ...prev, open: false }))}>
+                    <div className="modal modal-md">
+                        <div className="modal-header">
+                            <div className="modal-title">Ortodontia sem agendamento ({format(currentDate, 'MMMM', { locale: ptBR })})</div>
+                            <button className="modal-close" onClick={() => setOrtoSemAgendamentoModal(prev => ({ ...prev, open: false }))}>
+                                <i className="fa-solid fa-xmark" />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            {ortoSemAgendamentoModal.loading ? (
+                                <div className="loading"><div className="spinner" /></div>
+                            ) : ortoSemAgendamentoModal.pacientes.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Todos os pacientes de ortodontia estão agendados para este mês.</div>
+                            ) : (
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Paciente</th>
+                                                <th>Telefone</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {ortoSemAgendamentoModal.pacientes.map(p => (
+                                                <tr key={p.id}>
+                                                    <td><strong>{p.name}</strong></td>
+                                                    <td>{p.phone || '-'}</td>
+                                                    <td><span className="badge badge-danger">Sem Agendamento</span></td>
                                                 </tr>
                                             ))}
                                         </tbody>

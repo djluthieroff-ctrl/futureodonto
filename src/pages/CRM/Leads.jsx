@@ -8,10 +8,11 @@ export default function Leads() {
     const toast = useToast()
     const [leadsOnline, setLeadsOnline] = useState([])
     const [leadsRedes, setLeadsRedes] = useState([])
+    const [leadsUltimaGestao, setLeadsUltimaGestao] = useState([])
     const [loading, setLoading] = useState(true)
     const [status, setStatus] = useState('')
     const [modalNovoLead, setModalNovoLead] = useState(false)
-    const [novoLead, setNovoLead] = useState({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social' })
+    const [novoLead, setNovoLead] = useState({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social', is_ultima_gestao: false })
     const [saving, setSaving] = useState(false)
     const [savingAgendamento, setSavingAgendamento] = useState(false)
     const [modalImport, setModalImport] = useState(false)
@@ -34,13 +35,14 @@ export default function Leads() {
         try {
             const { data, error } = await supabase
                 .from('leads')
-                .select('*')
+                .select('*, patients(is_active_patient)')
                 .order('created_at', { ascending: false })
 
             if (error) throw error
 
-            setLeadsOnline((data || []).filter(l => l.type === 'agendamento_online'))
-            setLeadsRedes((data || []).filter(l => l.type !== 'agendamento_online'))
+            setLeadsOnline((data || []).filter(l => l.type === 'agendamento_online' && !l.is_ultima_gestao))
+            setLeadsRedes((data || []).filter(l => l.type !== 'agendamento_online' && !l.is_ultima_gestao))
+            setLeadsUltimaGestao((data || []).filter(l => l.is_ultima_gestao === true))
         } catch (e) {
             console.error('Erro ao carregar leads:', e)
         } finally {
@@ -76,7 +78,7 @@ export default function Leads() {
             const { error } = await supabase.from('leads').insert([novoLead])
             if (error) throw error
             setModalNovoLead(false)
-            setNovoLead({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social' })
+            setNovoLead({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social', is_ultima_gestao: false })
             loadLeads()
             toast.success('Lead criado com sucesso!')
             await registrarAuditoria({
@@ -408,6 +410,11 @@ export default function Leads() {
         [leadsRedes, sortLeadsByName, sortOrder]
     )
 
+    const sortedLeadsUltimaGestao = useMemo(
+        () => sortLeadsByName(leadsUltimaGestao, sortOrder),
+        [leadsUltimaGestao, sortLeadsByName, sortOrder]
+    )
+
     const LeadTable = ({ leads, title, isOnline }) => (
         <div className="card" style={{ marginBottom: 24 }}>
             <div className="card-header">
@@ -453,19 +460,42 @@ export default function Leads() {
                                         <td>{formattedDate}</td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                {lead.convertido_em_paciente && (
+                                                {lead.convertido_em_paciente ? (
                                                     <span
-                                                        title="Convertido em paciente"
+                                                        title={lead.patients?.is_active_patient ? "Tratamento Fechado" : "Paciente em Avaliação"}
                                                         style={{
-                                                            width: 10,
-                                                            height: 10,
+                                                            width: 12,
+                                                            height: 12,
                                                             borderRadius: '50%',
-                                                            background: '#22C55E',
+                                                            background: lead.patients?.is_active_patient ? '#22C55E' : '#F59E0B',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            color: '#fff',
+                                                            fontSize: '7px'
+                                                        }}
+                                                    >
+                                                        {lead.patients?.is_active_patient ? <i className="fa-solid fa-check" /> : <i className="fa-solid fa-user" />}
+                                                    </span>
+                                                ) : (
+                                                    <span
+                                                        title="Lead"
+                                                        style={{
+                                                            width: 12,
+                                                            height: 12,
+                                                            borderRadius: '50%',
+                                                            background: '#94A3B8',
                                                             display: 'inline-block'
                                                         }}
                                                     />
                                                 )}
                                                 <strong>{lead.name}</strong>
+                                                {lead.etapa === 'faltou_desmarcou' && (
+                                                    <i className="fa-solid fa-calendar-xmark" style={{ color: '#EF4444', fontSize: 12 }} title="Faltou ou Desmarcou" />
+                                                )}
+                                                {lead.etapa === 'atendido' && !lead.patients?.is_active_patient && (
+                                                    <i className="fa-solid fa-clipboard-check" style={{ color: '#3B82F6', fontSize: 12 }} title="Atendido (Avaliação)" />
+                                                )}
                                             </div>
                                         </td>
                                         <td>
@@ -559,6 +589,7 @@ export default function Leads() {
                 <>
                     <LeadTable leads={sortedLeadsOnline} title="Seção 1: Agendamentos Online" isOnline={true} />
                     <LeadTable leads={sortedLeadsRedes} title="Seção 2: Leads de Redes Sociais" isOnline={false} />
+                    <LeadTable leads={sortedLeadsUltimaGestao} title="Seção 3: Pacientes da última gestão" isOnline={false} />
                 </>
             )}
 
@@ -674,6 +705,16 @@ export default function Leads() {
                                     <option value="Facebook">Facebook</option>
                                     <option value="Google">Google</option>
                                 </select>
+                            </div>
+                            <div className="form-group">
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={novoLead.is_ultima_gestao}
+                                        onChange={e => setNovoLead(p => ({ ...p, is_ultima_gestao: e.target.checked }))}
+                                    />
+                                    <span style={{ fontSize: 13 }}>Paciente da última gestão (Reativação)</span>
+                                </label>
                             </div>
                         </div>
                         <div className="modal-footer">
