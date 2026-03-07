@@ -45,6 +45,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
     background: white;
     padding: 16px 24px;
     border-radius: 12px;
@@ -107,6 +109,73 @@
     gap: 16px;
 }
 
+.agenda-search-wrapper {
+    position: relative;
+    min-width: 320px;
+    max-width: 460px;
+    flex: 1;
+}
+
+.agenda-search-input {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 10px 14px;
+    color: #334155;
+    background: #f8fafc;
+}
+
+.agenda-search-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 30;
+}
+
+.agenda-search-result-item {
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid #f1f5f9;
+    background: #fff;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+}
+
+.agenda-search-result-item:last-child {
+    border-bottom: none;
+}
+
+.agenda-search-result-item:hover {
+    background: #f8fafc;
+}
+
+.agenda-search-result-item span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.agenda-search-result-item strong {
+    font-size: 13px;
+    color: #0f172a;
+}
+
+.agenda-search-result-item small {
+    font-size: 11px;
+    color: #64748b;
+}
+
 .kpi-card {
     background: white;
     padding: 12px 24px;
@@ -139,6 +208,18 @@
 
 .kpi-card.pendentes .kpi-value {
     color: #64748b;
+}
+
+.kpi-card.nao-compareceu {
+    background: #fef2f2;
+}
+
+.kpi-card.nao-compareceu .kpi-value {
+    color: #dc2626;
+}
+
+.kpi-card.nao-compareceu .kpi-label {
+    color: #dc2626;
 }
 
 .appointments-list {
@@ -184,6 +265,16 @@
 
 .appointment-card.faltou {
     border-left-color: #ef4444;
+}
+
+.appointment-card.atrasado {
+    border-left-color: #ef4444;
+    background: #fff7f7;
+}
+
+.appointment-highlighted {
+    outline: 3px solid #3b82f6;
+    box-shadow: 0 0 18px rgba(59, 130, 246, 0.2);
 }
 
 .appointment-main-info {

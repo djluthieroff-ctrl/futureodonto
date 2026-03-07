@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { format } from 'date-fns'
+import { buildEndDateFromStart, DEFAULT_APPOINTMENT_MINUTES, findAgendamentoConflict } from '../../lib/agendamento'
 
 export default function AgendamentoOnline() {
     const [config, setConfig] = useState({
@@ -16,6 +17,7 @@ export default function AgendamentoOnline() {
     const [dataSelecionada, setDataSelecionada] = useState('')
     const [horarioSelecionado, setHorarioSelecionado] = useState('')
     const [dentistaSelecionado, setDentistaSelecionado] = useState('')
+    const [cadeiraSelecionada, setCadeiraSelecionada] = useState('')
     const [dentistas, setDentistas] = useState([])
     const [cadeiras, setCadeiras] = useState([])
     const [motivo, setMotivo] = useState('consulta')
@@ -39,6 +41,9 @@ export default function AgendamentoOnline() {
             ])
             setDentistas(d || [])
             setCadeiras(c || [])
+            if ((c || []).length === 1) {
+                setCadeiraSelecionada(c[0].id)
+            }
         } catch (e) {
             console.error('Erro ao carregar configura��es:', e)
         }
@@ -95,15 +100,33 @@ export default function AgendamentoOnline() {
             alert('Selecione um dentista')
             return
         }
+        if (cadeiras.length > 0 && !cadeiraSelecionada) {
+            alert('Selecione uma cadeira')
+            return
+        }
 
         const dataHoraInicio = new Date(`${dataSelecionada}T${horarioSelecionado}`).toISOString()
-        const dataHoraFim = new Date(new Date(dataHoraInicio).getTime() + 30 * 60000).toISOString()
+        const dataHoraFim = buildEndDateFromStart(dataHoraInicio, DEFAULT_APPOINTMENT_MINUTES).toISOString()
 
         try {
+            const conflict = await findAgendamentoConflict({
+                supabase,
+                data_inicio: dataHoraInicio,
+                data_fim: dataHoraFim,
+                dentista_id: dentistaSelecionado,
+                cadeira_id: cadeiraSelecionada || null
+            })
+
+            if (conflict) {
+                const conflitandoCom = conflict?.patients?.name || 'outro paciente'
+                alert(`Conflito de agenda com ${conflitandoCom}. Ajuste horario, dentista ou cadeira.`)
+                return
+            }
+
             const { error } = await supabase.from('agendamentos').insert([{
                 paciente_id: pacienteSelecionado.id,
                 dentista_id: dentistaSelecionado,
-                cadeira_id: cadeiras[0]?.id || null,
+                cadeira_id: cadeiraSelecionada || null,
                 data_inicio: dataHoraInicio,
                 data_fim: dataHoraFim,
                 motivo,
@@ -120,6 +143,7 @@ export default function AgendamentoOnline() {
             setDataSelecionada('')
             setHorarioSelecionado('')
             setDentistaSelecionado('')
+            setCadeiraSelecionada('')
             setObservacoes('')
         } catch (e) {
             console.error('Erro ao agendar:', e)
@@ -337,6 +361,16 @@ export default function AgendamentoOnline() {
                             </select>
                         </div>
                         <div className="form-group">
+                            <label className="form-label">Cadeira {cadeiras.length > 0 ? '*' : ''}</label>
+                            <select className="form-control" value={cadeiraSelecionada} onChange={e => setCadeiraSelecionada(e.target.value)}>
+                                <option value="">{cadeiras.length > 0 ? 'Selecione...' : 'Sem cadeiras cadastradas'}</option>
+                                {cadeiras.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="form-grid form-grid-2">
+                        <div className="form-group">
                             <label className="form-label">Motivo</label>
                             <select className="form-control" value={motivo} onChange={e => setMotivo(e.target.value)}>
                                 <option value="consulta">Consulta</option>
@@ -358,4 +392,5 @@ export default function AgendamentoOnline() {
         </div>
     )
 }
+
 

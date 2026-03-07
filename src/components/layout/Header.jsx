@@ -169,7 +169,7 @@ export default function Header() {
                             <i className="fa-solid fa-clock" />
                             Lista de espera
                         </div>
-                        <div className="header-dropdown-item" onClick={() => navigate('/financeiro?open=despesa')}>
+                        <div className="header-dropdown-item" onClick={() => navigate('/financeiro/despesas?open=despesa')}>
                             <i className="fa-solid fa-file-invoice-dollar" />
                             Despesa
                         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
@@ -7,6 +8,8 @@ import { useToast } from '../../components/ui/Toast'
 import { registrarAuditoria } from '../../lib/auditoria'
 
 export default function Financeiro() {
+    const location = useLocation()
+    const navigate = useNavigate()
     const toast = useToast()
     const [tab, setTab] = useState('receitas')
     const [receitas, setReceitas] = useState([])
@@ -38,6 +41,23 @@ export default function Financeiro() {
         })
         setFluxoData(chartData)
     }, [])
+
+    useEffect(() => {
+        const tabFromPath = location.pathname.split('/financeiro/')[1] || 'receitas'
+        if (['receitas', 'despesas', 'fluxo'].includes(tabFromPath) && tabFromPath !== tab) {
+            setTab(tabFromPath)
+        }
+    }, [location.pathname, tab])
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search)
+        if (params.get('open') === 'despesa') {
+            setTab('despesas')
+            setModal(true)
+            params.delete('open')
+            navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+        }
+    }, [location.pathname, location.search, navigate])
 
     const loadFinanceiro = useCallback(async () => {
         setLoading(true)
@@ -146,7 +166,7 @@ export default function Financeiro() {
 
             <div className="tabs">
                 {['receitas', 'despesas', 'fluxo'].map(t => (
-                    <div key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+                    <div key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => navigate(`/financeiro/${t}`)}>
                         {t === 'receitas' && <><i className="fa-solid fa-arrow-down" style={{ marginRight: 6, color: 'var(--success)' }} />Contas a Receber</>}
                         {t === 'despesas' && <><i className="fa-solid fa-arrow-up" style={{ marginRight: 6, color: 'var(--danger)' }} />Contas a Pagar</>}
                         {t === 'fluxo' && <><i className="fa-solid fa-chart-line" style={{ marginRight: 6 }} />Fluxo de Caixa</>}

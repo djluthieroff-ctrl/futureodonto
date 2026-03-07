@@ -5,8 +5,6 @@ import {
     startOfMonth,
     endOfMonth,
     eachDayOfInterval,
-    startOfWeek,
-    endOfWeek,
     isSameMonth,
     addMonths,
     subMonths,

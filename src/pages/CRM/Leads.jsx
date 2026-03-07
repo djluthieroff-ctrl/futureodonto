@@ -1,54 +1,178 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '../../lib/supabase'
 import { format } from 'date-fns'
+import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/ui/Toast'
 import { registrarAuditoria } from '../../lib/auditoria'
+import { buildEndDateFromStart, DEFAULT_APPOINTMENT_MINUTES, findAgendamentoConflict } from '../../lib/agendamento'
+
+const LEAD_STAGE_OPTIONS = [
+    { value: 'lead', label: 'Novo Lead' },
+    { value: 'consulta_agendada', label: 'Consulta Agendada' },
+    { value: 'atendido', label: 'Atendido' },
+    { value: 'faltou_desmarcou', label: 'Faltou/Desmarcou' },
+    { value: 'orcamento_perdido', label: 'Perdido' }
+]
+
+const DEFAULT_NEW_LEAD = {
+    name: '',
+    phone: '',
+    email: '',
+    source: 'Manual',
+    type: 'rede_social',
+    is_ultima_gestao: false,
+    etapa: 'lead'
+}
+
+const DEFAULT_SCHEDULE_FORM = {
+    data_inicio: '',
+    data_fim: '',
+    dentista_id: '',
+    cadeira_id: '',
+    motivo: 'consulta'
+}
+
+const normalizeText = (value) => (value || '').toString().trim().toLowerCase()
+
+const getLeadStage = (lead) => {
+    if (lead?.etapa) return lead.etapa
+    if (lead?.status === 'agendado' || lead?.status === 'scheduled') return 'consulta_agendada'
+    if (lead?.status === 'visit') return 'atendido'
+    return lead?.status || 'lead'
+}
+
+const isLeadOnline = (lead) => lead?.type === 'agendamento_online'
+
+const sortLeads = (list, sortOrder) => {
+    if (sortOrder === 'created_desc') return list
+    const direction = sortOrder === 'name_desc' ? -1 : 1
+    return [...list].sort((a, b) => {
+        const aName = normalizeText(a?.name)
+        const bName = normalizeText(b?.name)
+        return aName.localeCompare(bName, 'pt-BR') * direction
+    })
+}
+
+const formatDateSafely = (dateValue, mask = 'dd/MM/yyyy') => {
+    if (!dateValue) return '-'
+    const date = new Date(dateValue)
+    if (Number.isNaN(date.getTime())) return '-'
+    return format(date, mask)
+}
+
+const formatForInput = (dateValue) => {
+    const d = new Date(dateValue)
+    if (Number.isNaN(d.getTime())) return ''
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const matchesLeadSearch = (lead, searchTerm) => {
+    if (!searchTerm) return true
+    const normalized = normalizeText(searchTerm)
+    return [lead?.name, lead?.phone, lead?.email, lead?.source].some((field) => normalizeText(field).includes(normalized))
+}
 
 export default function Leads() {
     const toast = useToast()
-    const [leadsOnline, setLeadsOnline] = useState([])
-    const [leadsRedes, setLeadsRedes] = useState([])
-    const [leadsUltimaGestao, setLeadsUltimaGestao] = useState([])
+
+    const [leads, setLeads] = useState([])
+    const [patientMetaMap, setPatientMetaMap] = useState({})
     const [loading, setLoading] = useState(true)
     const [status, setStatus] = useState('')
+
     const [modalNovoLead, setModalNovoLead] = useState(false)
-    const [novoLead, setNovoLead] = useState({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social', is_ultima_gestao: false })
-    const [saving, setSaving] = useState(false)
-    const [savingAgendamento, setSavingAgendamento] = useState(false)
     const [modalImport, setModalImport] = useState(false)
     const [modalAgendamento, setModalAgendamento] = useState(false)
+
+    const [novoLead, setNovoLead] = useState(DEFAULT_NEW_LEAD)
     const [importJson, setImportJson] = useState('')
-    const [sortOrder, setSortOrder] = useState('created_desc')
+
+    const [saving, setSaving] = useState(false)
+    const [savingAgendamento, setSavingAgendamento] = useState(false)
+
     const [leadParaAgendar, setLeadParaAgendar] = useState(null)
     const [dentistas, setDentistas] = useState([])
     const [cadeiras, setCadeiras] = useState([])
-    const [agendamentoForm, setAgendamentoForm] = useState({
-        data_inicio: '',
-        data_fim: '',
-        dentista_id: '',
-        cadeira_id: '',
-        motivo: 'consulta'
-    })
+    const [agendamentoForm, setAgendamentoForm] = useState(DEFAULT_SCHEDULE_FORM)
+
+    const [sortOrder, setSortOrder] = useState('created_desc')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [stageFilter, setStageFilter] = useState('all')
+    const [sectionFilter, setSectionFilter] = useState('all')
+    const [onlyUnscheduled, setOnlyUnscheduled] = useState(false)
+
+    const setTransientStatus = useCallback((text) => {
+        setStatus(text)
+        setTimeout(() => setStatus(''), 3000)
+    }, [])
+
+    const loadPatientMeta = useCallback(async (leadRows) => {
+        const patientIds = [...new Set((leadRows || []).map((lead) => lead.paciente_id).filter(Boolean))]
+
+        if (patientIds.length === 0) {
+            setPatientMetaMap({})
+            return
+        }
+
+        const mapRows = (rows) => {
+            const next = {}
+            ;(rows || []).forEach((row) => {
+                const isActive = typeof row?.is_active_patient === 'boolean'
+                    ? row.is_active_patient
+                    : normalizeText(row?.status) === 'ativo'
+                next[row.id] = {
+                    is_active_patient: Boolean(isActive),
+                    status: row?.status || null
+                }
+            })
+            setPatientMetaMap(next)
+        }
+
+        const withIsActive = await supabase
+            .from('patients')
+            .select('id,status,is_active_patient')
+            .in('id', patientIds)
+
+        if (!withIsActive.error) {
+            mapRows(withIsActive.data)
+            return
+        }
+
+        const fallback = await supabase
+            .from('patients')
+            .select('id,status')
+            .in('id', patientIds)
+
+        if (fallback.error) {
+            console.error('Erro ao carregar metadados de pacientes:', fallback.error)
+            setPatientMetaMap({})
+            return
+        }
+
+        mapRows(fallback.data)
+    }, [])
 
     const loadLeads = useCallback(async () => {
         setLoading(true)
         try {
             const { data, error } = await supabase
                 .from('leads')
-                .select('*, patients(is_active_patient)')
+                .select('*')
                 .order('created_at', { ascending: false })
 
             if (error) throw error
 
-            setLeadsOnline((data || []).filter(l => l.type === 'agendamento_online' && !l.is_ultima_gestao))
-            setLeadsRedes((data || []).filter(l => l.type !== 'agendamento_online' && !l.is_ultima_gestao))
-            setLeadsUltimaGestao((data || []).filter(l => l.is_ultima_gestao === true))
+            const rows = data || []
+            setLeads(rows)
+            await loadPatientMeta(rows)
         } catch (e) {
             console.error('Erro ao carregar leads:', e)
+            toast.error(`Erro ao carregar leads: ${e.message || 'falha inesperada'}`)
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [loadPatientMeta, toast])
 
     useEffect(() => {
         loadLeads()
@@ -71,136 +195,12 @@ export default function Leads() {
         loadConfigsAgendamento()
     }, [loadConfigsAgendamento])
 
-    const handleCreateLead = async () => {
-        if (!novoLead.name) return toast.warning('Nome é obrigatório')
-        setSaving(true)
-        try {
-            const { error } = await supabase.from('leads').insert([novoLead])
-            if (error) throw error
-            setModalNovoLead(false)
-            setNovoLead({ name: '', phone: '', email: '', source: 'Manual', type: 'rede_social', is_ultima_gestao: false })
-            loadLeads()
-            toast.success('Lead criado com sucesso!')
-            await registrarAuditoria({
-                modulo: 'Leads',
-                acao: 'Lead criado',
-                detalhes: `Lead: ${novoLead.name}`,
-            })
-        } catch (e) {
-            console.error('Erro ao criar lead:', e)
-            toast.error('Erro ao criar lead: ' + (e.message || ''))
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    const handleImportJson = async () => {
-        try {
-            const data = JSON.parse(importJson)
-            if (!Array.isArray(data)) throw new Error('O conteúdo deve ser um array de leads')
-
-            setSaving(true)
-
-            // Mapear campos do projeto antigo para o novo
-            const mappedLeads = data.map(l => {
-                let etapa = 'lead'
-                if (l.status === 'scheduled') etapa = 'consulta_agendada'
-                if (l.status === 'visit') etapa = 'atendido'
-
-                return {
-                    name: l.name || 'Sem nome',
-                    phone: l.phone || '',
-                    email: l.email || '',
-                    source: l.source || l.channel || 'Importado',
-                    type: l.status === 'scheduled' ? 'agendamento_online' : 'rede_social',
-                    etapa: etapa,
-                    message: l.message || '',
-                    created_at: l.createdAt || new Date().toISOString(),
-                    data_desejada: l.visitDate || l.scheduledAt || null
-                }
-            })
-
-            // Inserir em lotes de 50 para evitar limites
-            for (let i = 0; i < mappedLeads.length; i += 50) {
-                const batch = mappedLeads.slice(i, i + 50)
-                const { error } = await supabase.from('leads').insert(batch)
-                if (error) throw error
-            }
-
-            toast.success(`${mappedLeads.length} leads importados com sucesso!`)
-            setModalImport(false)
-            setImportJson('')
-            loadLeads()
-            await registrarAuditoria({
-                modulo: 'Leads',
-                acao: 'Leads importados',
-                detalhes: `Quantidade: ${mappedLeads.length}`,
-            })
-        } catch (e) {
-            console.error('Erro na importação:', e)
-            toast.error('Erro ao importar JSON: ' + e.message)
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    const handleDeleteLead = async (id) => {
-        if (!confirm('Deseja excluir este lead permanentemente?')) return
-        try {
-            const { error } = await supabase.from('leads').delete().eq('id', id)
-            if (error) throw error
-            loadLeads()
-            toast.success('Lead excluído!')
-            await registrarAuditoria({
-                modulo: 'Leads',
-                acao: 'Lead excluido',
-                detalhes: `Lead ID: ${id}`,
-            })
-        } catch (e) {
-            console.error('Erro ao excluir lead:', e)
-            toast.error('Erro ao excluir lead')
-        }
-    }
-
-    const updateLeadStatus = async (id, newEtapa) => {
-        try {
-            const { error } = await supabase
-                .from('leads')
-                .update({ etapa: newEtapa })
-                .eq('id', id)
-
-            if (error) {
-                if (error.code === 'PGRST204' || error.message?.includes('column "etapa" does not exist')) {
-                    await supabase.from('leads').update({ status: newEtapa }).eq('id', id)
-                } else {
-                    throw error
-                }
-            }
-            loadLeads()
-            setStatus('Status atualizado!')
-            setTimeout(() => setStatus(''), 3000)
-            await registrarAuditoria({
-                modulo: 'Leads',
-                acao: 'Etapa de lead atualizada',
-                detalhes: `Lead ID: ${id} -> ${newEtapa}`,
-            })
-        } catch (e) {
-            console.error('Erro ao atualizar lead:', e)
-        }
-    }
-
-    const formatForInput = (dateValue) => {
-        const d = new Date(dateValue)
-        if (Number.isNaN(d.getTime())) return ''
-        const pad = (n) => String(n).padStart(2, '0')
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-    }
-
     const buildDefaultScheduleForm = useCallback((lead) => {
         const step = 15 * 60000
         const startBase = lead?.data_desejada ? new Date(lead.data_desejada) : new Date()
         const start = new Date(Math.ceil(startBase.getTime() / step) * step)
-        const end = new Date(start.getTime() + step)
+        const end = buildEndDateFromStart(start, DEFAULT_APPOINTMENT_MINUTES)
+
         return {
             data_inicio: formatForInput(start),
             data_fim: formatForInput(end),
@@ -216,38 +216,12 @@ export default function Leads() {
         setModalAgendamento(true)
     }, [buildDefaultScheduleForm])
 
-    const fecharModalAgendamento = () => {
+    const fecharModalAgendamento = useCallback(() => {
         setModalAgendamento(false)
         setLeadParaAgendar(null)
-    }
+    }, [])
 
-    const syncLeadAsScheduled = async (leadId, pacienteId, dataInicioIso) => {
-        const basePayload = {
-            convertido_em_paciente: true,
-            paciente_id: pacienteId,
-            data_desejada: dataInicioIso
-        }
-
-        const { error: etapaError } = await supabase
-            .from('leads')
-            .update({ ...basePayload, etapa: 'consulta_agendada' })
-            .eq('id', leadId)
-
-        if (!etapaError) return
-
-        if (etapaError.code === 'PGRST204' || etapaError.message?.includes('column "etapa" does not exist')) {
-            const { error: statusError } = await supabase
-                .from('leads')
-                .update({ ...basePayload, status: 'agendado' })
-                .eq('id', leadId)
-            if (!statusError) return
-            throw statusError
-        }
-
-        throw etapaError
-    }
-
-    const ensurePacienteForLead = async (lead) => {
+    const createPatientForLead = useCallback(async (lead) => {
         if (lead.paciente_id) return lead.paciente_id
 
         const patientPayload = {
@@ -257,43 +231,87 @@ export default function Leads() {
             source: lead.source || lead.type || 'Lead'
         }
 
-        let { data: newPatient, error: pError } = await supabase
+        let { data: patient, error } = await supabase
             .from('patients')
             .insert([patientPayload])
             .select()
             .single()
 
-        if (pError) {
-            if (pError.message?.includes('source') && (pError.message?.includes('column') || pError.message?.includes('schema cache'))) {
-                delete patientPayload.source
-                const { data: retryData, error: retryError } = await supabase
-                    .from('patients')
-                    .insert([patientPayload])
-                    .select()
-                    .single()
-                if (retryError) throw retryError
-                newPatient = retryData
-            } else {
-                throw pError
-            }
+        if (error) {
+            const shouldRetryWithoutSource = error.message?.includes('source')
+                && (error.message?.includes('column') || error.message?.includes('schema cache'))
+
+            if (!shouldRetryWithoutSource) throw error
+
+            delete patientPayload.source
+
+            const retry = await supabase
+                .from('patients')
+                .insert([patientPayload])
+                .select()
+                .single()
+
+            if (retry.error) throw retry.error
+            patient = retry.data
         }
 
-        return newPatient.id
-    }
+        return patient.id
+    }, [])
+
+    const updateLeadWithFallback = useCallback(async (leadId, payload) => {
+        const firstTry = await supabase.from('leads').update(payload).eq('id', leadId)
+        if (!firstTry.error) return
+
+        const etapaMissing = firstTry.error.code === 'PGRST204'
+            || firstTry.error.message?.includes('column "etapa" does not exist')
+
+        if (!etapaMissing || !payload.etapa) throw firstTry.error
+
+        const fallbackPayload = { ...payload, status: payload.etapa }
+        delete fallbackPayload.etapa
+
+        const fallbackTry = await supabase.from('leads').update(fallbackPayload).eq('id', leadId)
+        if (fallbackTry.error) throw fallbackTry.error
+    }, [])
+
+    const syncLeadAsScheduled = useCallback(async (leadId, pacienteId, dataInicioIso) => {
+        await updateLeadWithFallback(leadId, {
+            convertido_em_paciente: true,
+            paciente_id: pacienteId,
+            data_desejada: dataInicioIso,
+            etapa: 'consulta_agendada'
+        })
+    }, [updateLeadWithFallback])
 
     const confirmarAgendamentoLead = async () => {
         if (!leadParaAgendar) return
         if (!agendamentoForm.data_inicio) return toast.warning('Informe data e hora de inicio')
         if (!agendamentoForm.dentista_id) return toast.warning('Selecione um dentista')
         if (!agendamentoForm.cadeira_id) return toast.warning('Selecione uma cadeira')
+        if (!leadParaAgendar.paciente_id && !confirm(`O lead "${leadParaAgendar.name}" sera convertido em paciente para confirmar o agendamento. Deseja continuar?`)) return
 
         setSavingAgendamento(true)
+
         try {
-            const pacienteId = await ensurePacienteForLead(leadParaAgendar)
+            const pacienteId = await createPatientForLead(leadParaAgendar)
             const dataInicioIso = new Date(agendamentoForm.data_inicio).toISOString()
             const dataFimIso = agendamentoForm.data_fim
                 ? new Date(agendamentoForm.data_fim).toISOString()
-                : new Date(new Date(agendamentoForm.data_inicio).getTime() + 15 * 60000).toISOString()
+                : buildEndDateFromStart(agendamentoForm.data_inicio, DEFAULT_APPOINTMENT_MINUTES).toISOString()
+
+            const conflict = await findAgendamentoConflict({
+                supabase,
+                data_inicio: dataInicioIso,
+                data_fim: dataFimIso,
+                dentista_id: agendamentoForm.dentista_id,
+                cadeira_id: agendamentoForm.cadeira_id
+            })
+
+            if (conflict) {
+                const conflitandoCom = conflict?.patients?.name || 'outro paciente'
+                toast.warning(`Conflito de agenda com ${conflitandoCom}. Ajuste horario, dentista ou cadeira.`)
+                return
+            }
 
             const appointmentPayload = {
                 paciente_id: pacienteId,
@@ -311,172 +329,278 @@ export default function Leads() {
 
             await syncLeadAsScheduled(leadParaAgendar.id, pacienteId, dataInicioIso)
 
-            fecharModalAgendamento()
-            setStatus('Lead agendado com sucesso!')
-            setTimeout(() => setStatus(''), 3000)
-            await loadLeads()
-            toast.success('Consulta agendada e integrada com o sistema')
             await registrarAuditoria({
                 modulo: 'Leads',
                 acao: 'Lead agendado',
-                detalhes: `Lead: ${leadParaAgendar.name} | Data: ${new Date(dataInicioIso).toLocaleString('pt-BR')}`,
+                detalhes: `Lead: ${leadParaAgendar.name} | Data: ${new Date(dataInicioIso).toLocaleString('pt-BR')}`
             })
+
+            fecharModalAgendamento()
+            setTransientStatus('Lead agendado com sucesso')
+            toast.success('Consulta agendada e vinculada ao contato')
+            await loadLeads()
         } catch (e) {
             console.error('Erro ao agendar lead:', e)
-            toast.error('Erro ao agendar lead: ' + (e.message || ''))
+            toast.error(`Erro ao agendar lead: ${e.message || 'falha inesperada'}`)
         } finally {
             setSavingAgendamento(false)
         }
     }
 
-    const handleEtapaChange = async (lead, newEtapa) => {
-        const etapaAtual = lead.etapa || lead.status || 'lead'
-        if (newEtapa === etapaAtual) return
+    const handleCreateLead = async () => {
+        if (!novoLead.name) return toast.warning('Nome e obrigatorio')
+        setSaving(true)
 
-        if (newEtapa === 'consulta_agendada') {
+        try {
+            const payload = { ...novoLead }
+            let { error } = await supabase.from('leads').insert([payload])
+
+            const etapaMissing = error && (
+                error.code === 'PGRST204'
+                || error.message?.includes('column "etapa" does not exist')
+            )
+
+            if (etapaMissing) {
+                const fallbackPayload = { ...payload, status: payload.etapa || 'lead' }
+                delete fallbackPayload.etapa
+                const fallback = await supabase.from('leads').insert([fallbackPayload])
+                error = fallback.error
+            }
+
+            if (error) throw error
+
+            setModalNovoLead(false)
+            setNovoLead(DEFAULT_NEW_LEAD)
+
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead criado',
+                detalhes: `Lead: ${payload.name}`
+            })
+
+            toast.success('Lead criado com sucesso')
+            await loadLeads()
+        } catch (e) {
+            console.error('Erro ao criar lead:', e)
+            toast.error(`Erro ao criar lead: ${e.message || 'falha inesperada'}`)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleImportJson = async () => {
+        try {
+            const raw = JSON.parse(importJson)
+            if (!Array.isArray(raw)) throw new Error('O conteudo deve ser um array de leads')
+
+            setSaving(true)
+
+            const mappedLeads = raw.map((lead) => {
+                let etapa = 'lead'
+                if (lead.status === 'scheduled') etapa = 'consulta_agendada'
+                if (lead.status === 'visit') etapa = 'atendido'
+
+                return {
+                    name: lead.name || 'Sem nome',
+                    phone: lead.phone || '',
+                    email: lead.email || '',
+                    source: lead.source || lead.channel || 'Importado',
+                    type: lead.status === 'scheduled' ? 'agendamento_online' : 'rede_social',
+                    etapa,
+                    message: lead.message || '',
+                    created_at: lead.createdAt || new Date().toISOString(),
+                    data_desejada: lead.visitDate || lead.scheduledAt || null
+                }
+            })
+
+            for (let i = 0; i < mappedLeads.length; i += 50) {
+                const batch = mappedLeads.slice(i, i + 50)
+                const { error } = await supabase.from('leads').insert(batch)
+                if (error) throw error
+            }
+
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Leads importados',
+                detalhes: `Quantidade: ${mappedLeads.length}`
+            })
+
+            toast.success(`${mappedLeads.length} leads importados com sucesso`)
+            setModalImport(false)
+            setImportJson('')
+            await loadLeads()
+        } catch (e) {
+            console.error('Erro na importacao:', e)
+            toast.error(`Erro ao importar JSON: ${e.message || 'falha inesperada'}`)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleDeleteLead = async (id) => {
+        if (!window.confirm('Deseja excluir este lead permanentemente?')) return
+
+        try {
+            const { error } = await supabase.from('leads').delete().eq('id', id)
+            if (error) throw error
+
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Lead excluido',
+                detalhes: `Lead ID: ${id}`
+            })
+
+            toast.success('Lead excluido')
+            await loadLeads()
+        } catch (e) {
+            console.error('Erro ao excluir lead:', e)
+            toast.error('Erro ao excluir lead')
+        }
+    }
+
+    const updateLeadStatus = async (id, newStage) => {
+        try {
+            await updateLeadWithFallback(id, { etapa: newStage })
+
+            await registrarAuditoria({
+                modulo: 'Leads',
+                acao: 'Etapa de lead atualizada',
+                detalhes: `Lead ID: ${id} -> ${newStage}`
+            })
+
+            setTransientStatus('Etapa atualizada')
+            await loadLeads()
+        } catch (e) {
+            console.error('Erro ao atualizar lead:', e)
+            toast.error(`Erro ao atualizar lead: ${e.message || 'falha inesperada'}`)
+        }
+    }
+
+    const handleEtapaChange = async (lead, newStage) => {
+        const stage = getLeadStage(lead)
+        if (newStage === stage) return
+
+        if (newStage === 'consulta_agendada') {
             abrirModalAgendamento(lead)
             return
         }
 
-        await updateLeadStatus(lead.id, newEtapa)
+        await updateLeadStatus(lead.id, newStage)
     }
 
     const converterEmPaciente = async (lead) => {
+        if (!confirm(`Converter o lead "${lead.name}" em paciente agora?`)) return
         try {
-            const patientPayload = {
-                name: lead.name,
-                phone: lead.phone || null,
-                email: lead.email || null,
-                source: lead.source || lead.type
-            }
-
-            let { data: newPatient, error: pError } = await supabase
-                .from('patients')
-                .insert([patientPayload])
-                .select()
-                .single()
-
-            if (pError) {
-                if (pError.message?.includes('source') && (pError.message?.includes('column') || pError.message?.includes('schema cache'))) {
-                    delete patientPayload.source
-                    const { data: retryData, error: retryError } = await supabase
-                        .from('patients')
-                        .insert([patientPayload])
-                        .select()
-                        .single()
-                    if (retryError) throw retryError
-                    newPatient = retryData
-                } else {
-                    throw pError
-                }
-            }
-
-            await supabase.from('leads').update({
+            const patientId = await createPatientForLead(lead)
+            await updateLeadWithFallback(lead.id, {
                 etapa: 'consulta_agendada',
                 convertido_em_paciente: true,
-                paciente_id: newPatient.id
-            }).eq('id', lead.id)
+                paciente_id: patientId
+            })
 
-            loadLeads()
-            toast.success('Lead convertido em paciente com sucesso!')
             await registrarAuditoria({
                 modulo: 'Leads',
                 acao: 'Lead convertido em paciente',
-                detalhes: `Lead: ${lead.name} | Paciente ID: ${newPatient.id}`,
+                detalhes: `Lead: ${lead.name} | Paciente ID: ${patientId}`
             })
+
+            toast.success('Lead convertido em paciente com sucesso')
+            await loadLeads()
         } catch (e) {
             console.error('Erro ao converter lead:', e)
-            toast.error('Erro ao converter lead: ' + (e.message || ''))
+            toast.error(`Erro ao converter lead: ${e.message || 'falha inesperada'}`)
         }
     }
 
-    const sortLeadsByName = useCallback((leads, order) => {
-        if (order === 'created_desc') return leads
-        const direction = order === 'name_desc' ? -1 : 1
-        return [...leads].sort((a, b) => {
-            const nameA = (a?.name || '').toLowerCase()
-            const nameB = (b?.name || '').toLowerCase()
-            return nameA.localeCompare(nameB, 'pt-BR') * direction
+    const enrichedLeads = useMemo(() => {
+        return (leads || []).map((lead) => {
+            const patientMeta = lead?.paciente_id ? patientMetaMap[lead.paciente_id] : null
+            return {
+                ...lead,
+                etapaAtual: getLeadStage(lead),
+                patientMeta: patientMeta || null
+            }
         })
-    }, [])
+    }, [leads, patientMetaMap])
 
-    const sortedLeadsOnline = useMemo(
-        () => sortLeadsByName(leadsOnline, sortOrder),
-        [leadsOnline, sortLeadsByName, sortOrder]
-    )
+    const filteredLeads = useMemo(() => {
+        return enrichedLeads.filter((lead) => {
+            if (!matchesLeadSearch(lead, searchTerm)) return false
+            if (sectionFilter === 'online' && !isLeadOnline(lead)) return false
+            if (sectionFilter === 'social' && (isLeadOnline(lead) || lead.is_ultima_gestao)) return false
+            if (sectionFilter === 'reactivation' && !lead.is_ultima_gestao) return false
+            if (stageFilter !== 'all' && lead.etapaAtual !== stageFilter) return false
+            if (onlyUnscheduled && lead.etapaAtual === 'consulta_agendada') return false
+            return true
+        })
+    }, [enrichedLeads, searchTerm, sectionFilter, stageFilter, onlyUnscheduled])
 
-    const sortedLeadsRedes = useMemo(
-        () => sortLeadsByName(leadsRedes, sortOrder),
-        [leadsRedes, sortLeadsByName, sortOrder]
-    )
+    const leadsOnline = useMemo(() => filteredLeads.filter((lead) => isLeadOnline(lead) && !lead.is_ultima_gestao), [filteredLeads])
+    const leadsRedes = useMemo(() => filteredLeads.filter((lead) => !isLeadOnline(lead) && !lead.is_ultima_gestao), [filteredLeads])
+    const leadsUltimaGestao = useMemo(() => filteredLeads.filter((lead) => lead.is_ultima_gestao), [filteredLeads])
 
-    const sortedLeadsUltimaGestao = useMemo(
-        () => sortLeadsByName(leadsUltimaGestao, sortOrder),
-        [leadsUltimaGestao, sortLeadsByName, sortOrder]
-    )
+    const sortedLeadsOnline = useMemo(() => sortLeads(leadsOnline, sortOrder), [leadsOnline, sortOrder])
+    const sortedLeadsRedes = useMemo(() => sortLeads(leadsRedes, sortOrder), [leadsRedes, sortOrder])
+    const sortedLeadsUltimaGestao = useMemo(() => sortLeads(leadsUltimaGestao, sortOrder), [leadsUltimaGestao, sortOrder])
 
-    const LeadTable = ({ leads, title, isOnline }) => (
+    const kpis = useMemo(() => {
+        const total = enrichedLeads.length
+        const novos = enrichedLeads.filter((lead) => lead.etapaAtual === 'lead').length
+        const agendados = enrichedLeads.filter((lead) => lead.etapaAtual === 'consulta_agendada').length
+        const convertidos = enrichedLeads.filter((lead) => lead.convertido_em_paciente).length
+
+        return { total, novos, agendados, convertidos }
+    }, [enrichedLeads])
+
+    const LeadTable = ({ leads: rows, title, isOnline }) => (
         <div className="card" style={{ marginBottom: 24 }}>
             <div className="card-header">
                 <div>
                     <div className="card-title">{title}</div>
-                    <div className="card-subtitle">{leads.length} leads encontrados</div>
+                    <div className="card-subtitle">{rows.length} contatos</div>
                 </div>
             </div>
+
             <div className="table-wrapper">
                 <table>
                     <thead>
                         <tr>
                             <th>Data</th>
-                            <th>Nome</th>
                             <th>Contato</th>
-                            {isOnline && <th>Data Desejada</th>}
-                            {!isOnline && <th>Origem</th>}
+                            <th>Canal</th>
+                            {isOnline ? <th>Data desejada</th> : <th>Origem</th>}
                             <th>Etapa</th>
-                            <th>Ações</th>
+                            <th>Acoes</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {leads.length === 0 ? (
-                            <tr><td colSpan={7} style={{ textAlign: 'center', padding: 20 }}>Nenhum lead encontrado</td></tr>
+                        {rows.length === 0 ? (
+                            <tr>
+                                <td colSpan={6} style={{ textAlign: 'center', padding: 20 }}>
+                                    Nenhum lead encontrado
+                                </td>
+                            </tr>
                         ) : (
-                            leads.map(lead => {
-                                let formattedDate = '-'
-                                try {
-                                    if (lead.created_at) formattedDate = format(new Date(lead.created_at), 'dd/MM/yyyy')
-                                } catch (e) {
-                                    console.error('Erro ao formatar data do lead:', e)
-                                }
-
-                                let formattedDataDesejada = '-'
-                                try {
-                                    if (lead.data_desejada) formattedDataDesejada = format(new Date(lead.data_desejada), 'dd/MM/yyyy')
-                                } catch (e) {
-                                    console.error('Erro ao formatar data desejada:', e)
-                                }
+                            rows.map((lead) => {
+                                const hasPhone = Boolean(lead.phone)
+                                const patientIsActive = Boolean(lead.patientMeta?.is_active_patient)
 
                                 return (
                                     <tr key={lead.id}>
-                                        <td>{formattedDate}</td>
+                                        <td>{formatDateSafely(lead.created_at)}</td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 {lead.convertido_em_paciente ? (
                                                     <span
-                                                        title={lead.patients?.is_active_patient ? "Tratamento Fechado" : "Paciente em Avaliação"}
+                                                        title={patientIsActive ? 'Paciente ativo' : 'Paciente em avaliacao'}
                                                         style={{
                                                             width: 12,
                                                             height: 12,
                                                             borderRadius: '50%',
-                                                            background: lead.patients?.is_active_patient ? '#22C55E' : '#F59E0B',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            color: '#fff',
-                                                            fontSize: '7px'
+                                                            background: patientIsActive ? '#22C55E' : '#F59E0B',
+                                                            display: 'inline-block'
                                                         }}
-                                                    >
-                                                        {lead.patients?.is_active_patient ? <i className="fa-solid fa-check" /> : <i className="fa-solid fa-user" />}
-                                                    </span>
+                                                    />
                                                 ) : (
                                                     <span
                                                         title="Lead"
@@ -489,53 +613,66 @@ export default function Leads() {
                                                         }}
                                                     />
                                                 )}
-                                                <strong>{lead.name}</strong>
-                                                {lead.etapa === 'faltou_desmarcou' && (
-                                                    <i className="fa-solid fa-calendar-xmark" style={{ color: '#EF4444', fontSize: 12 }} title="Faltou ou Desmarcou" />
-                                                )}
-                                                {lead.etapa === 'atendido' && !lead.patients?.is_active_patient && (
-                                                    <i className="fa-solid fa-clipboard-check" style={{ color: '#3B82F6', fontSize: 12 }} title="Atendido (Avaliação)" />
-                                                )}
+                                                <div>
+                                                    <div style={{ fontWeight: 700 }}>{lead.name || 'Sem nome'}</div>
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lead.email || 'Sem e-mail'}</div>
+                                                </div>
                                             </div>
                                         </td>
-                                        <td>
-                                            <div style={{ fontSize: 12 }}>{lead.phone}</div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lead.email}</div>
-                                        </td>
-                                        {isOnline && <td>{formattedDataDesejada}</td>}
-                                        {!isOnline && <td><span className="badge badge-outline">{lead.source}</span></td>}
+                                        <td>{lead.phone || '-'}</td>
+                                        {isOnline ? (
+                                            <td>{formatDateSafely(lead.data_desejada)}</td>
+                                        ) : (
+                                            <td><span className="badge badge-outline">{lead.source || '-'}</span></td>
+                                        )}
                                         <td>
                                             <select
                                                 className="form-control form-control-sm"
-                                                value={lead.etapa || lead.status || 'lead'}
+                                                value={lead.etapaAtual}
                                                 onChange={(e) => handleEtapaChange(lead, e.target.value)}
                                                 style={{ width: 'auto' }}
                                             >
-                                                <option value="lead">Novo Lead</option>
-                                                <option value="consulta_agendada">Consulta Agendada</option>
-                                                <option value="atendido">Atendido</option>
-                                                <option value="faltou_desmarcou">Faltou/Desmarcou</option>
-                                                <option value="orcamento_perdido">Perdido</option>
+                                                {LEAD_STAGE_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
                                             </select>
                                         </td>
                                         <td>
-                                            <div style={{ display: 'flex', gap: 8 }}>
+                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                <button
+                                                    className="btn btn-sm btn-secondary"
+                                                    onClick={() => abrirModalAgendamento(lead)}
+                                                    title="Agendar contato"
+                                                >
+                                                    <i className="fa-solid fa-calendar-plus" /> Agendar
+                                                </button>
+
                                                 {!lead.convertido_em_paciente && (
                                                     <button
                                                         className="btn btn-sm btn-primary"
                                                         onClick={() => converterEmPaciente(lead)}
                                                         title="Converter em paciente"
                                                     >
-                                                        <i className="fa-solid fa-user-plus" />
+                                                        <i className="fa-solid fa-user-plus" /> Converter
                                                     </button>
                                                 )}
-                                                <button className="btn btn-sm btn-outline" title="Ver mensagem">
-                                                    <i className="fa-solid fa-envelope" />
-                                                </button>
+
+                                                {hasPhone && (
+                                                    <a
+                                                        className="btn btn-sm btn-outline"
+                                                        href={`https://wa.me/${String(lead.phone).replace(/\D/g, '')}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        title="Abrir WhatsApp"
+                                                    >
+                                                        <i className="fa-brands fa-whatsapp" /> WhatsApp
+                                                    </a>
+                                                )}
+
                                                 <button
                                                     className="btn btn-sm btn-danger"
                                                     onClick={() => handleDeleteLead(lead.id)}
-                                                    title="Remover Lead"
+                                                    title="Remover lead"
                                                 >
                                                     <i className="fa-solid fa-trash" /> Remover
                                                 </button>
@@ -554,7 +691,10 @@ export default function Leads() {
     return (
         <div className="leads-container">
             <div className="page-header">
-                <h1 className="page-title">Gestão de Leads</h1>
+                <div>
+                    <h1 className="page-title">Gestao de Leads</h1>
+                    <div className="page-subtitle">Central comercial com cadastro, qualificacao e agendamento de contatos</div>
+                </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary" onClick={() => setModalImport(true)} style={{ marginRight: 8 }}>
                         <i className="fa-solid fa-file-import" /> Importar JSON
@@ -568,15 +708,66 @@ export default function Leads() {
                 </div>
             </div>
 
+            <div className="cards-grid cards-grid-4" style={{ marginBottom: 16 }}>
+                <div className="card"><div className="card-body"><div className="card-subtitle">Total de contatos</div><div className="kpi-value">{kpis.total}</div></div></div>
+                <div className="card"><div className="card-body"><div className="card-subtitle">Novos leads</div><div className="kpi-value">{kpis.novos}</div></div></div>
+                <div className="card"><div className="card-body"><div className="card-subtitle">Consultas agendadas</div><div className="kpi-value">{kpis.agendados}</div></div></div>
+                <div className="card"><div className="card-body"><div className="card-subtitle">Convertidos</div><div className="kpi-value">{kpis.convertidos}</div></div></div>
+            </div>
+
             <div className="card" style={{ marginBottom: 16 }}>
-                <div className="card-body" style={{ padding: 12 }}>
-                    <div className="form-group" style={{ marginBottom: 0, maxWidth: 260 }}>
-                        <label className="form-label">Ordenacao</label>
-                        <select className="form-control" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                            <option value="created_desc">Mais recentes</option>
-                            <option value="name_asc">Nome (A-Z)</option>
-                            <option value="name_desc">Nome (Z-A)</option>
-                        </select>
+                <div className="card-body">
+                    <div className="form-grid form-grid-4" style={{ alignItems: 'end' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Buscar contato</label>
+                            <input
+                                className="form-control"
+                                placeholder="Nome, telefone, e-mail, origem"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Secao</label>
+                            <select className="form-control" value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)}>
+                                <option value="all">Todas</option>
+                                <option value="online">Agendamentos online</option>
+                                <option value="social">Redes sociais</option>
+                                <option value="reactivation">Ultima gestao</option>
+                            </select>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Etapa</label>
+                            <select className="form-control" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                                <option value="all">Todas</option>
+                                {LEAD_STAGE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Ordenacao</label>
+                            <select className="form-control" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+                                <option value="created_desc">Mais recentes</option>
+                                <option value="name_asc">Nome (A-Z)</option>
+                                <option value="name_desc">Nome (Z-A)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                            id="only-unscheduled"
+                            type="checkbox"
+                            checked={onlyUnscheduled}
+                            onChange={(e) => setOnlyUnscheduled(e.target.checked)}
+                        />
+                        <label htmlFor="only-unscheduled" style={{ fontSize: 13, cursor: 'pointer' }}>
+                            Mostrar apenas contatos sem consulta agendada
+                        </label>
                     </div>
                 </div>
             </div>
@@ -587,19 +778,20 @@ export default function Leads() {
                 <div className="loading"><div className="spinner" /></div>
             ) : (
                 <>
-                    <LeadTable leads={sortedLeadsOnline} title="Seção 1: Agendamentos Online" isOnline={true} />
-                    <LeadTable leads={sortedLeadsRedes} title="Seção 2: Leads de Redes Sociais" isOnline={false} />
-                    <LeadTable leads={sortedLeadsUltimaGestao} title="Seção 3: Pacientes da última gestão" isOnline={false} />
+                    <LeadTable leads={sortedLeadsOnline} title="Secao 1: Agendamentos Online" isOnline />
+                    <LeadTable leads={sortedLeadsRedes} title="Secao 2: Leads de Redes Sociais" isOnline={false} />
+                    <LeadTable leads={sortedLeadsUltimaGestao} title="Secao 3: Pacientes da Ultima Gestao" isOnline={false} />
                 </>
             )}
 
             {modalAgendamento && leadParaAgendar && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && fecharModalAgendamento()}>
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && fecharModalAgendamento()}>
                     <div className="modal modal-sm">
                         <div className="modal-header">
                             <div className="modal-title">Agendar consulta do lead</div>
                             <button className="modal-close" onClick={fecharModalAgendamento}><i className="fa-solid fa-xmark" /></button>
                         </div>
+
                         <div className="modal-body">
                             <div style={{ fontSize: 13, marginBottom: 12 }}>
                                 <strong>{leadParaAgendar.name}</strong>
@@ -613,7 +805,7 @@ export default function Leads() {
                                     className="form-control"
                                     step="900"
                                     value={agendamentoForm.data_inicio}
-                                    onChange={e => setAgendamentoForm(p => ({ ...p, data_inicio: e.target.value }))}
+                                    onChange={(e) => setAgendamentoForm((prev) => ({ ...prev, data_inicio: e.target.value }))}
                                 />
                             </div>
 
@@ -624,7 +816,7 @@ export default function Leads() {
                                     className="form-control"
                                     step="900"
                                     value={agendamentoForm.data_fim}
-                                    onChange={e => setAgendamentoForm(p => ({ ...p, data_fim: e.target.value }))}
+                                    onChange={(e) => setAgendamentoForm((prev) => ({ ...prev, data_fim: e.target.value }))}
                                 />
                             </div>
 
@@ -633,10 +825,10 @@ export default function Leads() {
                                 <select
                                     className="form-control"
                                     value={agendamentoForm.dentista_id}
-                                    onChange={e => setAgendamentoForm(p => ({ ...p, dentista_id: e.target.value }))}
+                                    onChange={(e) => setAgendamentoForm((prev) => ({ ...prev, dentista_id: e.target.value }))}
                                 >
                                     <option value="">Selecionar...</option>
-                                    {dentistas.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
+                                    {dentistas.map((dentista) => <option key={dentista.id} value={dentista.id}>{dentista.nome}</option>)}
                                 </select>
                             </div>
 
@@ -645,10 +837,10 @@ export default function Leads() {
                                 <select
                                     className="form-control"
                                     value={agendamentoForm.cadeira_id}
-                                    onChange={e => setAgendamentoForm(p => ({ ...p, cadeira_id: e.target.value }))}
+                                    onChange={(e) => setAgendamentoForm((prev) => ({ ...prev, cadeira_id: e.target.value }))}
                                 >
                                     <option value="">Selecionar...</option>
-                                    {cadeiras.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                                    {cadeiras.map((cadeira) => <option key={cadeira.id} value={cadeira.id}>{cadeira.nome}</option>)}
                                 </select>
                             </div>
 
@@ -657,7 +849,7 @@ export default function Leads() {
                                 <select
                                     className="form-control"
                                     value={agendamentoForm.motivo}
-                                    onChange={e => setAgendamentoForm(p => ({ ...p, motivo: e.target.value }))}
+                                    onChange={(e) => setAgendamentoForm((prev) => ({ ...prev, motivo: e.target.value }))}
                                 >
                                     <option value="consulta">Consulta</option>
                                     <option value="avaliacao">Avaliacao</option>
@@ -667,6 +859,7 @@ export default function Leads() {
                                 </select>
                             </div>
                         </div>
+
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={fecharModalAgendamento}>Cancelar</button>
                             <button className="btn btn-primary" onClick={confirmarAgendamentoLead} disabled={savingAgendamento}>
@@ -678,90 +871,95 @@ export default function Leads() {
             )}
 
             {modalNovoLead && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModalNovoLead(false)}>
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModalNovoLead(false)}>
                     <div className="modal modal-sm">
                         <div className="modal-header">
                             <div className="modal-title">Novo Lead</div>
                             <button className="modal-close" onClick={() => setModalNovoLead(false)}><i className="fa-solid fa-xmark" /></button>
                         </div>
+
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Nome *</label>
-                                <input className="form-control" value={novoLead.name} onChange={e => setNovoLead(p => ({ ...p, name: e.target.value }))} />
+                                <input className="form-control" value={novoLead.name} onChange={(e) => setNovoLead((prev) => ({ ...prev, name: e.target.value }))} />
                             </div>
+
                             <div className="form-group">
                                 <label className="form-label">Telefone</label>
-                                <input className="form-control" value={novoLead.phone} onChange={e => setNovoLead(p => ({ ...p, phone: e.target.value }))} />
+                                <input className="form-control" value={novoLead.phone} onChange={(e) => setNovoLead((prev) => ({ ...prev, phone: e.target.value }))} />
                             </div>
+
                             <div className="form-group">
                                 <label className="form-label">E-mail</label>
-                                <input className="form-control" value={novoLead.email} onChange={e => setNovoLead(p => ({ ...p, email: e.target.value }))} />
+                                <input className="form-control" value={novoLead.email} onChange={(e) => setNovoLead((prev) => ({ ...prev, email: e.target.value }))} />
                             </div>
+
                             <div className="form-group">
                                 <label className="form-label">Origem</label>
-                                <select className="form-control" value={novoLead.source} onChange={e => setNovoLead(p => ({ ...p, source: e.target.value }))}>
+                                <select className="form-control" value={novoLead.source} onChange={(e) => setNovoLead((prev) => ({ ...prev, source: e.target.value }))}>
                                     <option value="Manual">Manual</option>
                                     <option value="Instagram">Instagram</option>
                                     <option value="Facebook">Facebook</option>
                                     <option value="Google">Google</option>
                                 </select>
                             </div>
+
                             <div className="form-group">
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                                     <input
                                         type="checkbox"
                                         checked={novoLead.is_ultima_gestao}
-                                        onChange={e => setNovoLead(p => ({ ...p, is_ultima_gestao: e.target.checked }))}
+                                        onChange={(e) => setNovoLead((prev) => ({ ...prev, is_ultima_gestao: e.target.checked }))}
                                     />
-                                    <span style={{ fontSize: 13 }}>Paciente da última gestão (Reativação)</span>
+                                    <span style={{ fontSize: 13 }}>Paciente da ultima gestao (reativacao)</span>
                                 </label>
                             </div>
                         </div>
+
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setModalNovoLead(false)}>Cancelar</button>
-                            <button className="btn btn-primary" onClick={handleCreateLead} disabled={saving}>{saving ? 'Salvando...' : 'Criar Lead'}</button>
+                            <button className="btn btn-primary" onClick={handleCreateLead} disabled={saving}>
+                                {saving ? 'Salvando...' : 'Criar Lead'}
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
 
             {modalImport && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModalImport(false)}>
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModalImport(false)}>
                     <div className="modal modal-md">
                         <div className="modal-header">
-                            <div className="modal-title">Importar Leads do Projeto Antigo</div>
+                            <div className="modal-title">Importar Leads do projeto antigo</div>
                             <button className="modal-close" onClick={() => setModalImport(false)}><i className="fa-solid fa-xmark" /></button>
                         </div>
+
                         <div className="modal-body">
                             <p style={{ fontSize: 13, marginBottom: 12 }}>
-                                Vi no seu print que o sistema antigo está sincronizado com a nuvem. Use este comando que é garantido:<br />
-                                1. Abra seu <strong>projeto antigo</strong> no navegador.<br />
-                                2. Aperte <strong>F12</strong> e vá na aba <strong>Console</strong>.<br />
-                                3. Cole o comando abaixo e aperte Enter:<br />
-                                <code style={{ display: 'block', background: '#f1f5f9', padding: 8, marginTop: 4, borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                    {"copy(JSON.stringify(AppState.leads))"}
-                                </code>
-                                4. Se o comando acima der erro, tente este (pega direto do banco):<br />
-                                <code style={{ display: 'block', background: '#f1f5f9', padding: 8, marginTop: 4, borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                    {"copy(JSON.stringify(await supabaseClient.from('leads').select('*').then(r => r.data)))"}
-                                </code>
-                                5. Volte aqui e cole o conteúdo abaixo.
+                                Cole aqui o JSON exportado do sistema anterior. Aceita array de objetos com campos como
+                                <code style={{ marginLeft: 4 }}>name</code>,
+                                <code style={{ marginLeft: 4 }}>phone</code>,
+                                <code style={{ marginLeft: 4 }}>email</code>,
+                                <code style={{ marginLeft: 4 }}>status</code> e
+                                <code style={{ marginLeft: 4 }}>scheduledAt</code>.
                             </p>
+
                             <div className="form-group">
                                 <label className="form-label">Cole o JSON aqui</label>
                                 <textarea
                                     className="form-control"
                                     rows={10}
                                     value={importJson}
-                                    onChange={e => setImportJson(e.target.value)}
-                                    placeholder='[...] '
+                                    onChange={(e) => setImportJson(e.target.value)}
+                                    placeholder="[...]"
                                 />
                             </div>
                         </div>
+
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setModalImport(false)}>Cancelar</button>
                             <button className="btn btn-primary" onClick={handleImportJson} disabled={saving || !importJson}>
-                                {saving ? 'Importando...' : 'Iniciar Importação'}
+                                {saving ? 'Importando...' : 'Iniciar importacao'}
                             </button>
                         </div>
                     </div>

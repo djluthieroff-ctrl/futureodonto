@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
@@ -12,6 +13,8 @@ import '../../styles/agenda-moderna.css'
 import '../../styles/agenda-vertical.css'
 
 export default function Agenda({ defaultView = 'calendar' }) {
+    const location = useLocation()
+    const navigate = useNavigate()
     const calendarRef = useRef(null)
     const toast = useToast()
     const [eventos, setEventos] = useState([])
@@ -22,6 +25,9 @@ export default function Agenda({ defaultView = 'calendar' }) {
     const [viewType, setViewType] = useState(defaultView)
     const [currentDate, setCurrentDate] = useState(new Date())
     const [modal, setModal] = useState({ open: false, data: null, evento: null })
+    const [aptSearchTerm, setAptSearchTerm] = useState('')
+    const [aptSearchResults, setAptSearchResults] = useState([])
+    const [highlightedAppointmentId, setHighlightedAppointmentId] = useState('')
 
     useEffect(() => {
         setViewType(defaultView)
@@ -85,6 +91,25 @@ export default function Agenda({ defaultView = 'calendar' }) {
         }
     }, [dentistaSelecionado])
 
+    const getSituacaoLabel = (situacao) => {
+        const map = {
+            agendado: 'Agendado',
+            confirmado: 'Confirmado',
+            atendido: 'Atendido',
+            faltou: 'Faltou',
+            desmarcou: 'Desmarcou',
+            cancelado: 'Cancelado',
+        }
+        return map[situacao] || (situacao || 'Agendado')
+    }
+
+    const isAppointmentMissed = (eventData) => {
+        const sit = eventData?.situacao
+        if (!['agendado', 'confirmado'].includes(sit)) return false
+        const start = new Date(eventData?.data_inicio || eventData?.start)
+        return start.getTime() < Date.now()
+    }
+
     useEffect(() => {
         loadConfigs()
     }, [loadConfigs])
@@ -92,6 +117,15 @@ export default function Agenda({ defaultView = 'calendar' }) {
     useEffect(() => {
         loadEventos()
     }, [loadEventos])
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search)
+        if (params.get('open') === 'new') {
+            setModal({ open: true, data: new Date().toISOString(), evento: null })
+            params.delete('open')
+            navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+        }
+    }, [location.pathname, location.search, navigate])
 
     const handlePrev = () => {
         if (viewType === 'calendar') {
@@ -238,10 +272,44 @@ export default function Agenda({ defaultView = 'calendar' }) {
     const eventosDoDia = eventos.filter(e => isSameDay(parseISO(e.start), currentDate))
         .sort((a, b) => a.start.localeCompare(b.start))
 
+    const handleAppointmentSearch = (value) => {
+        setAptSearchTerm(value)
+        if (!value || value.trim().length < 2) {
+            setAptSearchResults([])
+            return
+        }
+
+        const normalized = value.toLowerCase()
+        const matches = (eventos || [])
+            .filter((ev) => {
+                const data = ev.extendedProps || {}
+                const patientName = data?.patients?.name || ev.title || ''
+                const procedure = data?.motivo || ''
+                return patientName.toLowerCase().includes(normalized) || procedure.toLowerCase().includes(normalized)
+            })
+            .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime())
+            .slice(0, 10)
+
+        setAptSearchResults(matches)
+    }
+
+    const selectAppointmentResult = (ev) => {
+        setAptSearchTerm('')
+        setAptSearchResults([])
+        setCurrentDate(parseISO(ev.start))
+        setHighlightedAppointmentId(ev.id)
+        setTimeout(() => {
+            const el = document.getElementById(`apt-card-${ev.id}`)
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 120)
+        setTimeout(() => setHighlightedAppointmentId(''), 3000)
+    }
+
     const kpis = {
         total: eventosDoDia.length,
         concluidos: eventosDoDia.filter(e => e.extendedProps.situacao === 'atendido').length,
-        pendentes: eventosDoDia.filter(e => e.extendedProps.situacao === 'agendado' || e.extendedProps.situacao === 'confirmado').length
+        naoCompareceu: eventosDoDia.filter(e => isAppointmentMissed(e.extendedProps)).length,
+        pendentes: eventosDoDia.filter(e => ['agendado', 'confirmado'].includes(e.extendedProps.situacao)).length
     }
 
     const renderVerticalView = () => {
@@ -285,6 +353,40 @@ export default function Agenda({ defaultView = 'calendar' }) {
                         </div>
                     </div>
 
+                    <div className="agenda-search-wrapper">
+                        <input
+                            type="text"
+                            className="agenda-search-input"
+                            placeholder="Buscar data de agendamento do paciente..."
+                            value={aptSearchTerm}
+                            onChange={(e) => handleAppointmentSearch(e.target.value)}
+                        />
+                        {aptSearchResults.length > 0 && (
+                            <div className="agenda-search-results">
+                                {aptSearchResults.map((ev) => {
+                                    const data = ev.extendedProps || {}
+                                    const when = parseISO(ev.start)
+                                    return (
+                                        <button
+                                            key={`search-${ev.id}`}
+                                            className="agenda-search-result-item"
+                                            onClick={() => selectAppointmentResult(ev)}
+                                        >
+                                            <span>
+                                                <strong>{data?.patients?.name || ev.title}</strong>
+                                                <small>{data?.motivo || 'Consulta'}</small>
+                                            </span>
+                                            <span>
+                                                <strong>{format(when, 'dd/MM/yyyy')}</strong>
+                                                <small>{format(when, 'HH:mm')}</small>
+                                            </span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
+
                     <div className="kpi-cards">
                         <div className="kpi-card total">
                             <span className="kpi-value">{kpis.total}</span>
@@ -293,6 +395,10 @@ export default function Agenda({ defaultView = 'calendar' }) {
                         <div className="kpi-card concluidos">
                             <span className="kpi-value">{kpis.concluidos}</span>
                             <span className="kpi-label">Concluídos</span>
+                        </div>
+                        <div className="kpi-card nao-compareceu">
+                            <span className="kpi-value">{kpis.naoCompareceu}</span>
+                            <span className="kpi-label">Nao Compareceu</span>
                         </div>
                         <div className="kpi-card pendentes">
                             <span className="kpi-value">{kpis.pendentes}</span>
@@ -310,24 +416,32 @@ export default function Agenda({ defaultView = 'calendar' }) {
                         eventosDoDia.map(ev => {
                             const data = ev.extendedProps
                             const startTime = format(parseISO(ev.start), 'HH:mm')
+                            const isMissed = isAppointmentMissed(data)
+                            const statusLabel = `${getSituacaoLabel(data.situacao)}${isMissed ? ' (Atrasado)' : ''}`.toUpperCase()
+                            const durationMinutes = data?.data_fim
+                                ? Math.max(5, Math.round((new Date(data.data_fim).getTime() - new Date(data.data_inicio).getTime()) / 60000))
+                                : 0
                             return (
                                 <div className="appointment-row" key={ev.id}>
                                     <div className="appointment-time">{startTime}</div>
-                                    <div className={`appointment-card ${data.situacao}`}>
-                                        <div className="status-badge">{data.situacao}</div>
+                                    <div
+                                        id={`apt-card-${ev.id}`}
+                                        className={`appointment-card ${data.situacao} ${isMissed ? 'atrasado' : ''} ${highlightedAppointmentId === ev.id ? 'appointment-highlighted' : ''}`}
+                                    >
+                                        <div className="status-badge">{statusLabel}</div>
                                         <div className="appointment-main-info">
                                             <h3 className="patient-name">{data.patients?.name || 'Paciente'}</h3>
                                             <div className="appointment-details">
                                                 <span>{data.motivo || 'Consulta'}</span>
                                                 <span>•</span>
-                                                <span>60 min</span>
+                                                <span>{durationMinutes ? `${durationMinutes} min` : 'Duracao indefinida'}</span>
                                             </div>
                                             {data.observacoes && (
                                                 <div className="appointment-note">"{data.observacoes}"</div>
                                             )}
                                         </div>
                                         <div className="appointment-actions">
-                                            <button className="btn-action btn-whatsapp" onClick={() => window.open(`https://wa.me/55${data.patients?.phone?.replace(/\D/g, '')}`, '_blank')}>
+                                            <button className="btn-action btn-whatsapp" disabled={!data.patients?.phone} onClick={() => window.open(`https://wa.me/55${data.patients?.phone?.replace(/\D/g, '')}`, '_blank')}>
                                                 <i className="fa-brands fa-whatsapp" /> WhatsApp
                                             </button>
                                             <button className="btn-action btn-remarcar" onClick={() => setModal({ open: true, data: null, evento: data })}>
@@ -336,12 +450,16 @@ export default function Agenda({ defaultView = 'calendar' }) {
                                             <button className="btn-action btn-edit" onClick={() => setModal({ open: true, data: null, evento: data })}>
                                                 <i className="fa-solid fa-pencil" />
                                             </button>
-                                            <button className="btn-action btn-confirmar" onClick={() => updateSituacao(ev.id, 'confirmado')}>
-                                                <i className="fa-solid fa-check" /> Confirmar
-                                            </button>
-                                            <button className="btn-action btn-atendido" onClick={() => updateSituacao(ev.id, 'atendido')}>
-                                                <i className="fa-solid fa-user-check" /> Atendido
-                                            </button>
+                                            {data.situacao !== 'atendido' && (
+                                                <button className="btn-action btn-confirmar" onClick={() => updateSituacao(ev.id, 'confirmado')}>
+                                                    <i className="fa-solid fa-check" /> Confirmar
+                                                </button>
+                                            )}
+                                            {data.situacao !== 'atendido' && (
+                                                <button className="btn-action btn-atendido" onClick={() => updateSituacao(ev.id, 'atendido')}>
+                                                    <i className="fa-solid fa-user-check" /> Atendido
+                                                </button>
+                                            )}
                                             <button className="btn-action btn-delete" onClick={() => handleDelete(ev.id)}>
                                                 <i className="fa-solid fa-trash" />
                                             </button>

@@ -52,7 +52,7 @@ export default function PacientesKPITela() {
                     <p className="page-subtitle">{config.titulo}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <Link to="/crm/painel" className="btn btn-secondary">
+                    <Link to="/crm/dashboard" className="btn btn-secondary">
                         <i className="fa-solid fa-chart-line" /> CRM
                     </Link>
                     <Link to="/painel" className="btn btn-outline">

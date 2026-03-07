@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/ui/Toast'
+import { buildEndDateFromStart, DEFAULT_APPOINTMENT_MINUTES, findAgendamentoConflict } from '../../lib/agendamento'
 
 export default function ModalAgendamento({ dataInicial, eventoExistente, dentistas, cadeiras, onClose }) {
     const isEdit = !!eventoExistente
@@ -90,6 +91,7 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
         if (!form.data_inicio) { toast.warning('Informe a data e hora de início.'); return }
         if (!form.dentista_id) { toast.warning('Selecione um dentista.'); return }
         if (!form.cadeira_id) { toast.warning('Selecione uma cadeira.'); return }
+        if (!confirm('Este lead sera convertido em paciente para concluir o agendamento. Deseja continuar?')) return
 
         setSaving(true)
         try {
@@ -185,7 +187,23 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
 
             // 4. Criar o agendamento automaticamente
             const dataInicioIso = new Date(form.data_inicio).toISOString()
-            const dataFimIso = form.data_fim ? new Date(form.data_fim).toISOString() : new Date(new Date(form.data_inicio).getTime() + 15 * 60000).toISOString()
+            const dataFimIso = form.data_fim
+                ? new Date(form.data_fim).toISOString()
+                : buildEndDateFromStart(form.data_inicio, DEFAULT_APPOINTMENT_MINUTES).toISOString()
+
+            const conflict = await findAgendamentoConflict({
+                supabase,
+                data_inicio: dataInicioIso,
+                data_fim: dataFimIso,
+                dentista_id: form.dentista_id,
+                cadeira_id: form.cadeira_id
+            })
+
+            if (conflict) {
+                const conflitandoCom = conflict?.patients?.name || 'outro paciente'
+                toast.warning(`Conflito de agenda com ${conflitandoCom}. Ajuste horario, dentista ou cadeira.`)
+                return
+            }
 
             const appointmentPayload = {
                 ...form,
@@ -218,6 +236,7 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
     }
 
     async function handleConvertLead(lead) {
+        if (!confirm(`Converter o lead "${lead.name}" em paciente para seguir com o agendamento?`)) return
         setSaving(true)
         try {
             const patientPayload = {
@@ -286,7 +305,25 @@ export default function ModalAgendamento({ dataInicial, eventoExistente, dentist
         setSaving(true)
         try {
             const dataInicioIso = new Date(form.data_inicio).toISOString()
-            const dataFimIso = form.data_fim ? new Date(form.data_fim).toISOString() : new Date(new Date(form.data_inicio).getTime() + 15 * 60000).toISOString()
+            const dataFimIso = form.data_fim
+                ? new Date(form.data_fim).toISOString()
+                : buildEndDateFromStart(form.data_inicio, DEFAULT_APPOINTMENT_MINUTES).toISOString()
+
+            const conflict = await findAgendamentoConflict({
+                supabase,
+                data_inicio: dataInicioIso,
+                data_fim: dataFimIso,
+                dentista_id: form.dentista_id,
+                cadeira_id: form.cadeira_id,
+                exclude_id: isEdit ? eventoExistente.id : null
+            })
+
+            if (conflict) {
+                const conflitandoCom = conflict?.patients?.name || 'outro paciente'
+                toast.warning(`Conflito de agenda com ${conflitandoCom}. Ajuste horario, dentista ou cadeira.`)
+                setSaving(false)
+                return
+            }
 
             // Remove campos que não existem na tabela agendamentos
             const payload = {

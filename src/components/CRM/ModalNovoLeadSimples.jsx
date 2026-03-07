@@ -15,27 +15,40 @@ export default function ModalNovoLeadSimples() {
     }, [])
 
     const handleSave = async () => {
-        if (!form.name) return toast.warning('O nome é obrigatório.')
+        if (!form.name) return toast.warning('O nome e obrigatorio.')
         setSaving(true)
 
         try {
-            const { error } = await supabase.from('leads').insert([{
+            const payload = {
                 ...form,
                 etapa: 'lead',
-                type: 'rede_social', // Padrao para cadastro manual
+                type: 'rede_social',
                 created_at: new Date().toISOString()
-            }])
+            }
+
+            let { error } = await supabase.from('leads').insert([payload])
+
+            const etapaMissing = error && (
+                error.code === 'PGRST204'
+                || error.message?.includes('column "etapa" does not exist')
+            )
+
+            if (etapaMissing) {
+                const fallbackPayload = { ...payload, status: 'lead' }
+                delete fallbackPayload.etapa
+                const fallback = await supabase.from('leads').insert([fallbackPayload])
+                error = fallback.error
+            }
 
             if (error) throw error
 
             toast.success('Lead cadastrado com sucesso!')
             setIsOpen(false)
             setForm({ name: '', phone: '', email: '', source: 'Manual' })
-            // Opcional: disparar evento para atualizar listas se necessario
             window.dispatchEvent(new CustomEvent('lead-added'))
         } catch (err) {
             console.error('Erro ao salvar lead:', err)
-            toast.error('Erro ao cadastrar lead.')
+            toast.error(`Erro ao cadastrar lead: ${err.message || 'falha inesperada'}`)
         } finally {
             setSaving(false)
         }
@@ -44,10 +57,10 @@ export default function ModalNovoLeadSimples() {
     if (!isOpen) return null
 
     return (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setIsOpen(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setIsOpen(false)}>
             <div className="modal modal-sm">
                 <div className="modal-header">
-                    <div className="modal-title">NOVO LEAD (AVALIAÇÃO)</div>
+                    <div className="modal-title">NOVO LEAD (AVALIACAO)</div>
                     <button className="modal-close" onClick={() => setIsOpen(false)}>
                         <i className="fa-solid fa-xmark" />
                     </button>
@@ -55,7 +68,7 @@ export default function ModalNovoLeadSimples() {
 
                 <div className="modal-body">
                     <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 20 }}>
-                        Use esta opção para pessoas que ainda não são pacientes e virão para uma avaliação.
+                        Use esta opcao para pessoas que ainda nao sao pacientes e virao para uma avaliacao.
                     </p>
 
                     <div className="form-group">
@@ -63,7 +76,7 @@ export default function ModalNovoLeadSimples() {
                         <input
                             className="form-control"
                             value={form.name}
-                            onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                             placeholder="Nome do interessado"
                             autoFocus
                         />
@@ -74,7 +87,7 @@ export default function ModalNovoLeadSimples() {
                         <input
                             className="form-control"
                             value={form.phone}
-                            onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
+                            onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
                             placeholder="(00) 00000-0000"
                         />
                     </div>
@@ -84,7 +97,7 @@ export default function ModalNovoLeadSimples() {
                         <input
                             className="form-control"
                             value={form.email}
-                            onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                            onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
                             placeholder="exemplo@email.com"
                         />
                     </div>
@@ -94,13 +107,13 @@ export default function ModalNovoLeadSimples() {
                         <select
                             className="form-control"
                             value={form.source}
-                            onChange={e => setForm(p => ({ ...p, source: e.target.value }))}
+                            onChange={(e) => setForm((prev) => ({ ...prev, source: e.target.value }))}
                         >
-                            <option value="Manual">Manual / Balcão</option>
+                            <option value="Manual">Manual / Balcao</option>
                             <option value="Instagram">Instagram</option>
                             <option value="Facebook">Facebook</option>
                             <option value="Google">Google / Site</option>
-                            <option value="Indicacao">Indicação</option>
+                            <option value="Indicacao">Indicacao</option>
                         </select>
                     </div>
                 </div>

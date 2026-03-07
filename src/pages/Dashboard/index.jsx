@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { format, subMonths, startOfMonth, subDays, addDays, startOfWeek, endOfWeek, addMonths, endOfMonth } from 'date-fns'
+import { format, subMonths, startOfMonth, subDays, addDays, addMonths, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 function FunnelChart({ etapas, onSelectEtapa }) {
@@ -147,8 +147,6 @@ export default function Dashboard() {
             const prox48h = format(addDays(new Date(), 2), 'yyyy-MM-dd')
             const ha6meses = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
-            const inicioSemana = format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
-            const fimSemana = format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
             // Buscamos leads criados NO MÊS ou agendados NO MÊS
             // Isso garante que leads migrados em Março (created_at) mas agendados para Fevereiro (scheduled_at)
@@ -180,7 +178,7 @@ export default function Dashboard() {
                 supabase.from('financeiro_parcelas').select('id,valor,data_vencimento,receita_id').eq('status', 'pendente').lte('data_vencimento', today).limit(20),
             ])
 
-            const [leadsRes, agSemanaRes, , faltaramRes, naoConfRes, reativadosRes, ausentesRes, ortoRes, agMesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
+            const [leadsRes, agSemanaRes, , _faltaramRes, naoConfRes, reativadosRes, ausentesRes, ortoRes, agMesRes, parcAtrasadasRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: [], count: 0, error: r.reason })
 
             const { data: aniversPs } = await supabase.from('patients').select('id,birth_date').not('birth_date', 'is', null)
             const aniversariantes = (aniversPs || []).filter((p) => p.birth_date?.split('-')[1] === mm).length
@@ -204,7 +202,7 @@ export default function Dashboard() {
                 }))
             }
 
-            const etapas = ['lead', 'consulta_agendada', 'faltou_desmarcaram', 'atendido', 'orcamento_criado', 'orcamento_aprovado', 'orcamento_perdido']
+            const etapas = ['lead', 'consulta_agendada', 'faltou_desmarcou', 'atendido', 'orcamento_criado', 'orcamento_aprovado', 'orcamento_perdido']
             const etapasLabels = ['Leads', 'Consulta agendada', 'Faltaram ou desmarcaram', 'Atendidos', 'Orçamento criado', 'Orçamento aprovado', 'Orçamento perdido']
             const etapasCores = ['#22C55E', '#84CC16', '#EAB308', '#F97316', '#8B5CF6', '#06B6D4', '#EF4444']
 
@@ -224,14 +222,14 @@ export default function Dashboard() {
 
             // Faltas: Marcados manualmente OU (agendamentos passados E (não atendidos OU venda não fechada))
             const faltaramNoPeriodo = leadsNoPeriodo.filter(l =>
-                l.etapa === 'faltou_desmarcaram' ||
+                l.etapa === 'faltou_desmarcou' ||
                 (l.scheduled_at && l.scheduled_at < todayIso && (l.attended !== true || l.sale_status !== 'sold'))
             )
 
             const funnelData = {
                 lead: leadsNoPeriodo.length,
                 consulta_agendada: agendadosNoPeriodo.length,
-                faltou_desmarcaram: faltaramNoPeriodo.length,
+                faltou_desmarcou: faltaramNoPeriodo.length,
                 atendido: atendidosNoPeriodo.length,
                 orcamento_criado: atendidosNoPeriodo.length, // Regra: Quem foi atendido teve orçamento criado
                 orcamento_aprovado: aprovadosNoPeriodo.length,
@@ -304,9 +302,9 @@ export default function Dashboard() {
                 leadsData = leadsNoPeriodo.filter(l => (l.attended === true || l.etapa === 'atendido'))
             } else if (etapa.key === 'orcamento_aprovado') {
                 leadsData = leadsNoPeriodo.filter(l => (l.sale_status === 'sold' || l.etapa === 'orcamento_aprovado'))
-            } else if (etapa.key === 'faltou_desmarcaram') {
+            } else if (etapa.key === 'faltou_desmarcou') {
                 leadsData = leadsNoPeriodo.filter(l =>
-                    l.etapa === 'faltou_desmarcaram' ||
+                    l.etapa === 'faltou_desmarcou' ||
                     (l.scheduled_at && l.scheduled_at < todayIso && (l.attended !== true || l.sale_status !== 'sold'))
                 )
             } else if (etapa.key === 'reativados') {
@@ -443,7 +441,7 @@ export default function Dashboard() {
             label: 'Faltaram ou desmarcaram',
             desc: 'Pacientes nao reagendados',
             period: 'Ultimos 30 dias',
-            onClick: () => handleOpenEtapaDetalhe({ key: 'faltou_desmarcaram', label: 'Faltaram ou desmarcaram' }),
+            onClick: () => handleOpenEtapaDetalhe({ key: 'faltou_desmarcou', label: 'Faltaram ou desmarcaram' }),
         },
         {
             icon: 'fa-calendar-xmark',
@@ -797,3 +795,4 @@ export default function Dashboard() {
         </div>
     )
 }
+

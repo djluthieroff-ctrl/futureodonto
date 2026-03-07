@@ -11,7 +11,7 @@ export default function PacientesKPI({ tipo, titulo, descricao, cor }) {
         try {
             const today = format(new Date(), 'yyyy-MM-dd')
             const mesAtual = format(new Date(), 'MM')
-            const prox72h = format(addDays(new Date(), 3), 'yyyy-MM-dd')
+            const prox48h = format(addDays(new Date(), 2), 'yyyy-MM-dd')
             const ha6meses = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
             const ha30d = format(subDays(new Date(), 30), 'yyyy-MM-dd')
 

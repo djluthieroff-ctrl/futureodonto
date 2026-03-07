@@ -182,6 +182,51 @@ export default function ProntuarioPaciente() {
         }
     }
 
+    async function handleSaveAnamnese() {
+        const temResposta = perguntasAnamnese.some((q) => q.resposta)
+        if (!temResposta) {
+            toast.warning('Preencha ao menos uma resposta da anamnese')
+            return
+        }
+
+        setSaving(true)
+        try {
+            const questionario = perguntasAnamnese.map((q) => ({
+                pergunta: q.pergunta,
+                resposta: q.resposta || '',
+                obs: q.obs || ''
+            }))
+
+            const { error } = await supabase.from('paciente_anamneses').insert({
+                paciente_id: id,
+                questionario
+            })
+
+            if (error) throw error
+
+            toast.success('Anamnese salva com sucesso')
+            setModalAnamnese(false)
+            setPerguntasAnamnese([
+                { id: 1, pergunta: 'Possui alguma alergia?', resposta: '', obs: '' },
+                { id: 2, pergunta: 'EstÃ¡ sob tratamento mÃ©dico?', resposta: '', obs: '' },
+                { id: 3, pergunta: 'Toma algum medicamento?', resposta: '', obs: '' },
+                { id: 4, pergunta: 'Problemas de cicatrizaÃ§Ã£o?', resposta: '', obs: '' },
+                { id: 5, pergunta: 'HipertensÃ£o ou Diabetes?', resposta: '', obs: '' },
+            ])
+            await registrarAuditoria({
+                modulo: 'Prontuario',
+                acao: 'Anamnese registrada',
+                detalhes: `Paciente: ${paciente?.name || id}`
+            })
+            await load()
+        } catch (error) {
+            console.error('Erro ao salvar anamnese:', error)
+            toast.error('Erro ao salvar anamnese')
+        } finally {
+            setSaving(false)
+        }
+    }
+
     async function handleSave() {
         setSaving(true)
         try {

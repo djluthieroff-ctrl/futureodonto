@@ -11,16 +11,20 @@ export default function Pacientes() {
     const toast = useToast()
     const [pacientes, setPacientes] = useState([])
     const [loading, setLoading] = useState(true)
+    const [saving, setSaving] = useState(false)
     const [search, setSearch] = useState('')
+    const [totalCount, setTotalCount] = useState(0)
     const [modal, setModal] = useState(false)
     const [form, setForm] = useState({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '', is_ortodontia: false, is_protese: false, is_clinico: true })
     const [showFilters, setShowFilters] = useState(false)
+    const [activeTab, setActiveTab] = useState('todos')
     const [filterType, setFilterType] = useState('todos') // todos, ortodontia, protese, clinico
 
     const loadPacientes = useCallback(async () => {
         setLoading(true)
+        const isLeadView = search === 'status:leads'
         let q = supabase.from('patients').select('id,name,phone,email,city,status,birth_date,created_at,is_ortodontia,is_active_patient', { count: 'exact' })
-        if (search) {
+        if (search && !isLeadView) {
             q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
         }
 
@@ -37,7 +41,9 @@ export default function Pacientes() {
         // Filtro padrão: apenas pacientes ativos (tratamento fechado)
         // Se estiver buscando ou filtrando especificamente, talvez queira ver todos, 
         // mas o pedido foi que eles "só devem vir para cá depois de fechar"
-        if (!search && filterType === 'todos') {
+        if (isLeadView) {
+            q = q.eq('is_active_patient', false)
+        } else if (!search && filterType === 'todos') {
             q = q.eq('is_active_patient', true)
         }
 
@@ -47,12 +53,7 @@ export default function Pacientes() {
             toast.error('Erro ao carregar pacientes: ' + (error.message || 'Verifique a conexão.'))
         }
 
-        let filteredData = data || []
-        if (search === 'status:leads') {
-            filteredData = (data || []).filter(p => !p.is_active_patient)
-        }
-
-        setPacientes(filteredData)
+        setPacientes(data || [])
         setTotalCount(count || 0)
         setLoading(false)
     }, [search, activeTab, filterType, toast])
@@ -96,7 +97,7 @@ export default function Pacientes() {
 
             setSaving(false)
             setModal(false)
-            setForm({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '', is_ortodontia: false })
+            setForm({ name: '', phone: '', email: '', cpf: '', birth_date: '', gender: '', city: '', status: 'ativo', notes: '', is_ortodontia: false, is_protese: false, is_clinico: true })
             loadPacientes()
             toast.success('Paciente cadastrado com sucesso!')
             await registrarAuditoria({
